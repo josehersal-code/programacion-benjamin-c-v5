@@ -1,24 +1,21 @@
-# Programación Benjamín C · Versión 5.0
-
-Base limpia y sencilla, sin autenticación.
+# Programación Benjamín C · Versión 5.1 · Fase 1
 
 ## Incluido
-- Diseño claro.
-- Biblioteca compartida.
+
+- Rediseño de navegación.
+- Inicio sin el texto “Aplicación sencilla para un único equipo”.
+- Panel de accesos rápidos.
+- Biblioteca de ejercicios conectada a Supabase.
 - Crear, editar y eliminar ejercicios.
-- Buscador y filtros.
-- Imágenes comprimidas en la propia tabla.
-- Preparada para añadir temporada, sesiones, jugadores y asistencia.
+- Buscar y filtrar.
+- Imágenes ampliables.
+- Favoritos.
 
-## Publicación
-- `npm run build`
-- directorio `dist`
+## Antes de publicar
 
-## Variables de Netlify
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_TEAM_ID`
-
-## Antes de usar
 Ejecuta en Supabase:
-`supabase/politicas_sin_autenticacion.sql`
+
+`supabase/fase1_favoritos.sql`
+
+Después sube todos los archivos del proyecto a GitHub y haz commit.
+Netlify desplegará automáticamente.

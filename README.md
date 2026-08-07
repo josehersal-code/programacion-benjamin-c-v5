@@ -2,6 +2,23 @@
 
 Rediseño centrado en uso diario rápido y compacto.
 
+## Despliegue alternativo en Vercel (además de Netlify)
+
+Se ha añadido `vercel.json` para poder alojar la app en [Vercel](https://vercel.com) (plan Hobby, gratuito) mientras Netlify esté bloqueado por límite de créditos, o de forma permanente si se prefiere.
+
+Pasos:
+
+1. Entra en [vercel.com](https://vercel.com) e inicia sesión con tu cuenta de GitHub.
+2. "Add New..." → "Project" → selecciona el repositorio de este proyecto.
+3. Vercel detecta automáticamente que es un proyecto Vite (build command `npm run build`, output `dist`); no hace falta tocar nada, `vercel.json` ya lo deja configurado.
+4. En "Environment Variables" añade las mismas que tienes en Netlify:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `VITE_TEAM_ID`
+5. "Deploy". Cada push a GitHub desplegará automáticamente, igual que con Netlify.
+
+Puedes tener Netlify y Vercel conectados al mismo repositorio a la vez sin conflicto (cada uno tiene su propia URL); cuando decidas cuál usar de forma definitiva, puedes desconectar el otro.
+
 ## Cambios en 6.0.3 (sobre 6.0.2)
 
 - Diagnóstico confirmado: la tabla `activities` en tu Supabase real tenía un esquema antiguo/incompleto (le faltaba, entre otras, la columna `home_away`) porque `create table if not exists` no añade columnas a una tabla que ya existe.

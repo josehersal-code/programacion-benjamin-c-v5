@@ -127,3 +127,36 @@ main{max-width:1320px;margin:auto;padding:28px 30px 70px}.card-panel{background:
     min-height:150px;
   }
 }
+
+
+/* ===== Versión 5.3 · Fase 2: mesociclos y calendario ===== */
+.mesocycle-grid{display:grid;gap:18px}
+.mesocycle-card{display:grid;grid-template-columns:78px 1fr;overflow:hidden}
+.mesocycle-number{display:grid;place-items:center;font-size:1.9rem;font-weight:900;color:#fff}
+.tone-0{background:#1779e8}.tone-1{background:#22a15d}.tone-2{background:#7a49d6}.tone-3{background:#e97a1d}
+.mesocycle-main{padding:22px}
+.mesocycle-title{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.mesocycle-title small{color:var(--blue);font-weight:850}.mesocycle-title h3{margin:3px 0 0;font-size:1.25rem}
+.mesocycle-actions{display:flex;gap:8px}.bordered{border:1px solid var(--border)!important;border-radius:10px!important;padding:8px!important;background:#fff!important}
+.date-range{display:flex;align-items:center;gap:8px;color:#536680;margin:13px 0}
+.objective-box{background:#f7faff;border:1px solid #e4ebf3;border-radius:12px;padding:13px 14px}
+.objective-box b{font-size:.83rem;color:var(--navy)}.objective-box p{margin:5px 0 0;color:#5f7087;white-space:pre-wrap;line-height:1.5}
+.calendar-panel{padding:20px}.calendar-toolbar{height:auto;position:static;border:0;padding:0 0 18px;display:flex;justify-content:center;gap:20px}
+.calendar-toolbar h3{min-width:220px;text-align:center;text-transform:capitalize;margin:6px 0;font-size:1.3rem}
+.weekday-row,.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.weekday-row b{text-align:center;padding:10px;color:#526681;font-size:.83rem}
+.calendar-grid{border-top:1px solid var(--border);border-left:1px solid var(--border)}
+.calendar-cell{min-height:125px;padding:9px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:#fff;overflow:hidden}
+.empty-day{background:#f8fafc}.day-number{display:block;font-weight:850;color:var(--navy);margin-bottom:8px}
+.cycle-pill,.session-pill{font-size:.7rem;line-height:1.25;border-radius:7px;padding:5px 6px;margin-top:5px;overflow:hidden;text-overflow:ellipsis}
+.cycle-pill{background:#e7f1ff;color:#1663b9;border-left:3px solid #1779e8}
+.session-pill{background:#e8f6ec;color:#237744;border-left:3px solid #22a15d}
+.calendar-legend{display:flex;gap:20px;padding:13px 16px;margin-top:14px;box-shadow:none}
+.calendar-legend span{display:flex;align-items:center;gap:7px;color:#607188;font-size:.82rem}.calendar-legend i{width:13px;height:13px;border-radius:3px}
+.legend-cycle{background:#e7f1ff;border-left:4px solid #1779e8}.legend-session{background:#e8f6ec;border-left:4px solid #22a15d}
+.mesocycle-modal{max-width:760px}
+@media(max-width:760px){
+  .mesocycle-card{grid-template-columns:48px 1fr}.mesocycle-main{padding:16px}.mesocycle-title{flex-direction:column}.mesocycle-actions{align-self:flex-end}
+  .calendar-panel{padding:10px;overflow-x:auto}.weekday-row,.calendar-grid{min-width:760px}.calendar-cell{min-height:110px}
+  .calendar-legend{flex-direction:column;gap:8px}
+}

@@ -1,22 +1,26 @@
-# Programación Benjamín C · Versión 5.2
+# Programación Benjamín C · Versión 5.3 · Fase 2
 
-## Cambios incluidos
+## Incluido
 
-- Ventana de creación y edición más ancha.
-- Altura máxima adaptada a la pantalla.
-- Desplazamiento interno dentro del formulario.
-- Botones Cancelar y Guardar siempre visibles.
-- Mejor visualización en portátil y móvil.
-- Biblioteca, filtros, favoritos e imágenes ampliables.
-- Mantiene la conexión y los datos de Supabase.
-- Compatible con los 15 ejercicios ya cargados desde el PDF FAV.
+- Todo lo de la versión 5.2.
+- Gestión completa de mesociclos:
+  - añadir;
+  - editar;
+  - eliminar;
+  - modificar fechas;
+  - modificar objetivos;
+  - número ilimitado de mesociclos.
+- Calendario mensual.
+- Visualización del mesociclo activo en cada fecha.
+- Preparado para mostrar las sesiones cuando se desarrollen en la fase 3.
+- Contador de mesociclos en Inicio.
 
 ## Publicación
 
 1. Descomprime el ZIP.
-2. Sube todo el contenido al repositorio `programacion-benjamin-c-v5`.
-3. Haz commit con el mensaje:
-   `Versión 5.2 editor de ejercicios`
+2. Sube todo el contenido a `programacion-benjamin-c-v5`.
+3. Commit:
+   `Versión 5.3 mesociclos y calendario`
 4. Netlify desplegará automáticamente.
 
-No hace falta ejecutar ningún SQL adicional.
+No hace falta ejecutar SQL adicional, porque utiliza las tablas `mesocycles` y `sessions` ya existentes.

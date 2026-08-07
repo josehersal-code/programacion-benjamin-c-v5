@@ -4,7 +4,7 @@ import {
   BookOpen, CalendarDays, ChevronDown, ClipboardList, History, Home,
   Image as ImageIcon, LayoutDashboard, Menu, Pencil, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Star, Trash2, TrendingUp, UserRound,
-  Users, X
+  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
@@ -243,6 +243,207 @@ function Library({favoritesOnly=false,onCount}){
   </>
 }
 
+
+function MesocycleModal({item,onClose,onSaved}){
+  const [form,setForm]=useState(item||{
+    name:"",start_date:"",end_date:"",objectives:"",sort_order:0
+  });
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+
+  async function save(e){
+    e.preventDefault();
+    setError("");
+    if(!form.name.trim()) return setError("Escribe el nombre del mesociclo.");
+    if(form.start_date && form.end_date && form.end_date<form.start_date){
+      return setError("La fecha final no puede ser anterior a la inicial.");
+    }
+    setBusy(true);
+    const payload={
+      team_id:TEAM_ID,
+      name:form.name.trim(),
+      start_date:form.start_date||null,
+      end_date:form.end_date||null,
+      objectives:form.objectives.trim()||null,
+      sort_order:Number(form.sort_order)||0,
+    };
+    const query=item?.id
+      ? supabase.from("mesocycles").update(payload).eq("id",item.id)
+      : supabase.from("mesocycles").insert(payload);
+    const {error}=await query;
+    setBusy(false);
+    if(error)return setError(error.message);
+    onSaved();
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal mesocycle-modal">
+      <header className="modal-head">
+        <div><small>{item?"Editar mesociclo":"Nuevo mesociclo"}</small><h2>Planificación del periodo</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button>
+      </header>
+      <form className="exercise-form" onSubmit={save}>
+        <label className="full">Nombre
+          <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Ej. Mesociclo 1 · Adaptación"/>
+        </label>
+        <label>Fecha de inicio
+          <input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/>
+        </label>
+        <label>Fecha final
+          <input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/>
+        </label>
+        <label className="full">Objetivos
+          <textarea rows="7" value={form.objectives||""} onChange={e=>set("objectives",e.target.value)}
+            placeholder="Objetivo general y objetivos específicos del mesociclo…"/>
+        </label>
+        {error&&<div className="error full">{error}</div>}
+        <footer className="form-footer full">
+          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
+          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar mesociclo"}</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+}
+
+function formatDate(value){
+  if(!value)return "Sin fecha";
+  return new Intl.DateTimeFormat("es-ES",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(value+"T12:00:00"));
+}
+
+function Mesocycles({onCount}){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [editing,setEditing]=useState(undefined);
+
+  async function load(){
+    setLoading(true);setError("");
+    const {data,error}=await supabase.from("mesocycles").select("*")
+      .eq("team_id",TEAM_ID).order("sort_order").order("start_date");
+    setLoading(false);
+    if(error)return setError(error.message);
+    setItems(data||[]);onCount?.(data?.length||0);
+  }
+  useEffect(()=>{load()},[]);
+
+  async function remove(item){
+    if(!confirm(`¿Eliminar "${item.name}"? Las sesiones vinculadas conservarán su fecha, pero quedarán sin mesociclo.`))return;
+    const {error}=await supabase.from("mesocycles").delete().eq("id",item.id);
+    if(error)return alert(error.message);
+    load();
+  }
+
+  return <>
+    <div className="page-title-row">
+      <div><p className="overline">Temporada</p><h2>Mesociclos</h2>
+        <p className="subtext">Divide la temporada en los periodos que necesites y modifica fechas y objetivos.</p></div>
+      <button className="button primary icon-text" onClick={()=>setEditing(null)}><Plus size={18}/>Añadir mesociclo</button>
+    </div>
+    {error&&<div className="error">{error}</div>}
+    {loading?<div className="empty">Cargando mesociclos…</div>:items.length===0?
+      <section className="empty card-panel"><CalendarDays size={38}/><h3>No hay mesociclos</h3><p>Crea el primero para comenzar la planificación.</p></section>:
+      <section className="mesocycle-grid">
+        {items.map((item,index)=><article className="mesocycle-card card-panel" key={item.id}>
+          <div className={`mesocycle-number tone-${index%4}`}>{index+1}</div>
+          <div className="mesocycle-main">
+            <div className="mesocycle-title"><div><small>MESOCICLO {index+1}</small><h3>{item.name}</h3></div>
+              <div className="mesocycle-actions">
+                <button className="icon-button bordered" onClick={()=>setEditing(item)} title="Editar"><Pencil size={17}/></button>
+                <button className="delete-button" onClick={()=>remove(item)} title="Eliminar"><Trash2 size={17}/></button>
+              </div>
+            </div>
+            <div className="date-range"><CalendarDays size={17}/><span>{formatDate(item.start_date)} — {formatDate(item.end_date)}</span></div>
+            <div className="objective-box"><b>Objetivos</b><p>{item.objectives||"Sin objetivos definidos."}</p></div>
+          </div>
+        </article>)}
+      </section>}
+    {editing!==undefined&&<MesocycleModal item={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
+  </>
+}
+
+function monthKey(date){
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+}
+function toISO(date){
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+
+function SeasonCalendar(){
+  const [month,setMonth]=useState(new Date(2026,8,1));
+  const [mesocycles,setMesocycles]=useState([]);
+  const [sessions,setSessions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+
+  async function load(){
+    setLoading(true);setError("");
+    const start=new Date(month.getFullYear(),month.getMonth(),1);
+    const end=new Date(month.getFullYear(),month.getMonth()+1,0);
+    const [m,s]=await Promise.all([
+      supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID).order("sort_order"),
+      supabase.from("sessions").select("*").eq("team_id",TEAM_ID)
+        .gte("session_date",toISO(start)).lte("session_date",toISO(end)).order("session_date")
+    ]);
+    setLoading(false);
+    if(m.error||s.error)return setError((m.error||s.error).message);
+    setMesocycles(m.data||[]);setSessions(s.data||[]);
+  }
+  useEffect(()=>{load()},[month]);
+
+  const cells=useMemo(()=>{
+    const first=new Date(month.getFullYear(),month.getMonth(),1);
+    const last=new Date(month.getFullYear(),month.getMonth()+1,0);
+    const mondayIndex=(first.getDay()+6)%7;
+    const list=[];
+    for(let i=0;i<mondayIndex;i++)list.push(null);
+    for(let d=1;d<=last.getDate();d++)list.push(new Date(month.getFullYear(),month.getMonth(),d));
+    while(list.length%7)list.push(null);
+    return list;
+  },[month]);
+
+  function cycleFor(iso){
+    return mesocycles.find(m=>(!m.start_date||iso>=m.start_date)&&(!m.end_date||iso<=m.end_date));
+  }
+
+  return <>
+    <div className="page-title-row">
+      <div><p className="overline">Temporada</p><h2>Calendario</h2>
+        <p className="subtext">Vista mensual de los mesociclos y de las sesiones que se crearán en la siguiente fase.</p></div>
+      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
+    </div>
+    <section className="calendar-panel card-panel">
+      <header className="calendar-toolbar">
+        <button className="icon-button bordered" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><ChevronLeft/></button>
+        <h3>{new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric"}).format(month)}</h3>
+        <button className="icon-button bordered" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><ChevronRight/></button>
+      </header>
+      {error&&<div className="error">{error}</div>}
+      {loading?<div className="empty">Cargando calendario…</div>:<>
+        <div className="weekday-row">{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(x=><b key={x}>{x}</b>)}</div>
+        <div className="calendar-grid">
+          {cells.map((date,index)=>{
+            if(!date)return <div className="calendar-cell empty-day" key={`e${index}`}/>;
+            const iso=toISO(date), cycle=cycleFor(iso);
+            const daySessions=sessions.filter(s=>s.session_date===iso);
+            return <div className="calendar-cell" key={iso}>
+              <span className="day-number">{date.getDate()}</span>
+              {cycle&&<div className="cycle-pill">{cycle.name}</div>}
+              {daySessions.map(s=><div className="session-pill" key={s.id}>Sesión {s.kind}{s.title?` · ${s.title}`:""}</div>)}
+            </div>
+          })}
+        </div>
+      </>}
+    </section>
+    <section className="calendar-legend card-panel">
+      <span><i className="legend-cycle"/>Mesociclo activo</span>
+      <span><i className="legend-session"/>Sesión programada</span>
+    </section>
+  </>
+}
+
+
 function Placeholder({title,text}){
   return <section className="placeholder card-panel"><h2>{title}</h2><p>{text}</p></section>
 }
@@ -250,7 +451,7 @@ function Placeholder({title,text}){
 function Dashboard({counts,setActive}){
   const stats=[
     {label:"Ejercicios",value:counts.exercises,color:"blue",icon:BookOpen},
-    {label:"Mesociclos",value:0,color:"green",icon:CalendarDays},
+    {label:"Mesociclos",value:counts.mesocycles||0,color:"green",icon:CalendarDays},
     {label:"Sesiones",value:0,color:"purple",icon:ClipboardList},
     {label:"Jugadores",value:0,color:"orange",icon:Users},
   ];
@@ -299,7 +500,7 @@ function Sidebar({active,setActive,open,setOpen}){
 function App(){
   const [active,setActive]=useState("inicio");
   const [open,setOpen]=useState(false);
-  const [counts,setCounts]=useState({exercises:0});
+  const [counts,setCounts]=useState({exercises:0,mesocycles:0});
   const labels={
     inicio:"Inicio",mesociclos:"Mesociclos",calendario:"Calendario",planificador:"Planificador",
     historial:"Historial",biblioteca:"Ejercicios",favoritos:"Favoritos",jugadores:"Jugadores",
@@ -314,10 +515,10 @@ function App(){
       </header>
       <main>
         {active==="inicio"&&<Dashboard counts={counts} setActive={setActive}/>}
-        {active==="biblioteca"&&<Library onCount={n=>setCounts({exercises:n})}/>}
+        {active==="biblioteca"&&<Library onCount={n=>setCounts(c=>({...c,exercises:n}))}/>} 
         {active==="favoritos"&&<Library favoritesOnly onCount={n=>setCounts({exercises:n})}/>}
-        {active==="mesociclos"&&<Placeholder title="Mesociclos" text="Se desarrollará en la fase 2."/>}
-        {active==="calendario"&&<Placeholder title="Calendario" text="Se desarrollará en la fase 2."/>}
+        {active==="mesociclos"&&<Mesocycles onCount={n=>setCounts(c=>({...c,mesocycles:n}))}/>} 
+        {active==="calendario"&&<SeasonCalendar/>} 
         {active==="planificador"&&<Placeholder title="Planificador de sesiones" text="Se desarrollará en la fase 3."/>}
         {active==="historial"&&<Placeholder title="Historial de sesiones" text="Se desarrollará en la fase 3."/>}
         {active==="jugadores"&&<Placeholder title="Jugadores" text="Se desarrollará en la fase 4."/>}

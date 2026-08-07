@@ -1,6 +1,12 @@
-# Programación Benjamín C · Versión 6.1.0
+# Programación Benjamín C · Versión 6.1.1
 
 Rediseño centrado en uso diario rápido y compacto.
+
+## Cambios en 6.1.1 (sobre 6.1.0)
+
+- El "Título" de cada sesión ya no es un campo editable: el nombre se calcula solo (`Semana N · Sesión A/B`) a partir de la fecha real y de si es A o B, para que nunca quede desincronizado con la semana que le corresponde.
+- Cada sesión muestra ahora un número correlativo "Nº sesión" (1, 2, 3…) por orden de fecha, empezando en la primera sesión de la temporada.
+- No requiere ninguna query SQL nueva sobre la 6.1.0.
 
 ## Antes de publicar la 6.1.0
 
@@ -85,4 +91,4 @@ Después sube todos los archivos al repositorio de GitHub y haz commit:
 
 ## Identidad de la aplicación
 
-En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.1.0 · Desarrollado por José A. Herrera.
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.1.1 · Desarrollado por José A. Herrera.

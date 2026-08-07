@@ -41,4 +41,7 @@ aside nav{flex:1 1 auto}
 .attendance-filter{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .attendance-filter label{display:flex;align-items:center;gap:7px;border:1px solid var(--border);background:#fff;border-radius:8px;padding:0 9px;font-size:12px;font-weight:700;color:#52627a}
 .attendance-filter input{border:0;outline:0;padding:8px 0;background:transparent}
+.session-no{display:inline-block;color:#7c8aa0;background:#f2f5f8;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;margin:2px 0 6px}
+.readonly-field{border:1px solid var(--border);border-radius:7px;padding:8px 9px;background:#f2f5f8;color:#52627a;font-weight:700}
+.session-meta label small{font-weight:400;color:var(--muted);font-size:10px}
 @media(max-width:640px){.season-form{grid-template-columns:1fr}}

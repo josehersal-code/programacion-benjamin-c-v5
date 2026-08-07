@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v6.1.1 — Nombre de sesión automático y número correlativo
+
+- El campo "Título" de cada sesión desaparece del editor: ya no se puede escribir a mano, para evitar que quede desincronizado con la semana real (el caso de "Semana 1 · Sesión A" apareciendo en la fila de la Semana 2).
+- El nombre de cada sesión se calcula siempre automáticamente a partir de su fecha real y de si es Sesión A o B: `Semana N · Sesión A/B`, donde N es la semana real respecto al inicio de entrenamientos configurado. El primer entrenamiento de la temporada es siempre "Semana 1" (Sesión A o B según caiga en martes o miércoles); el resto sigue la misma numeración de semana que ya se ve en la fila de Planificación y en Calendario.
+- Este nombre calculado se usa también en la ficha ampliada, en la vista previa/impresión A4, en el aviso de "Próxima sesión" de Inicio y en el nombre de la actividad que ven Asistencia/Convocatorias — todo coherente entre sí.
+- Nuevo contador "Nº sesión" en cada tarjeta de Planificación e Histórico: numeración correlativa (1, 2, 3…) de todas las sesiones de la temporada por orden de fecha, empezando por la primera sesión creada.
+
 ## v6.1.0 — Fechas de temporada configurables, mesociclos editables y orden de asistencia
 
 - **Ejecuta primero `supabase/add_season_dates.sql`** en el SQL Editor: añade a `teams` las columnas `training_start_date` y `match_start_date` (rellenadas por defecto con 1 de septiembre de 2026). Sin esta query, Planificación no podrá cargar ni guardar las nuevas fechas.

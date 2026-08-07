@@ -4,7 +4,7 @@ import {
   BookOpen, CalendarDays, ChevronDown, ClipboardList, History, Home,
   Image as ImageIcon, LayoutDashboard, Menu, Pencil, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Star, Trash2, TrendingUp, UserRound,
-  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check
+  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check, UserPlus, UserCheck, UserX
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
@@ -760,6 +760,174 @@ function SessionsPage({history=false,onCount}){
 }
 
 
+
+function PlayerModal({player,onClose,onSaved}){
+  const [form,setForm]=useState(player||{
+    number:"",name:"",position:"",start_date:"2026-09-01",end_date:"",active:true,notes:""
+  });
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+
+  async function save(e){
+    e.preventDefault();
+    setError("");
+    if(!form.name.trim()) return setError("Escribe el nombre del jugador.");
+    if(form.end_date && form.start_date && form.end_date<form.start_date){
+      return setError("La fecha de baja no puede ser anterior a la fecha de alta.");
+    }
+    setBusy(true);
+    const payload={
+      team_id:TEAM_ID,
+      number:form.number===""?null:Number(form.number),
+      name:form.name.trim(),
+      position:form.position.trim()||null,
+      start_date:form.start_date||"2026-09-01",
+      end_date:form.end_date||null,
+      active:Boolean(form.active),
+      notes:form.notes.trim()||null,
+    };
+    const query=player?.id
+      ? supabase.from("players").update(payload).eq("id",player.id)
+      : supabase.from("players").insert(payload);
+    const {error}=await query;
+    setBusy(false);
+    if(error)return setError(error.message);
+    onSaved();
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal player-modal">
+      <header className="modal-head">
+        <div><small>{player?"Editar jugador":"Nuevo jugador"}</small><h2>Ficha del jugador</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button>
+      </header>
+      <form className="exercise-form" onSubmit={save}>
+        <label>Dorsal
+          <input type="number" min="0" max="99" value={form.number??""} onChange={e=>set("number",e.target.value)} placeholder="Ej. 7"/>
+        </label>
+        <label>Posición
+          <input value={form.position||""} onChange={e=>set("position",e.target.value)} placeholder="Portero, defensa, medio…"/>
+        </label>
+        <label className="full">Nombre y apellidos
+          <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Nombre completo"/>
+        </label>
+        <label>Fecha de alta
+          <input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/>
+        </label>
+        <label>Fecha de baja
+          <input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/>
+        </label>
+        <label className="favorite-check full">
+          <input type="checkbox" checked={Boolean(form.active)} onChange={e=>set("active",e.target.checked)}/>
+          <UserCheck size={18}/> Jugador activo
+        </label>
+        <label className="full">Observaciones
+          <textarea rows="5" value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Información útil para el cuerpo técnico…"/>
+        </label>
+        {error&&<div className="error full">{error}</div>}
+        <footer className="form-footer full">
+          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
+          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar jugador"}</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+}
+
+function PlayersPage({onCount}){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [query,setQuery]=useState("");
+  const [status,setStatus]=useState("active");
+  const [editing,setEditing]=useState(undefined);
+
+  async function load(){
+    setLoading(true);setError("");
+    const {data,error}=await supabase.from("players").select("*")
+      .eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name");
+    setLoading(false);
+    if(error)return setError(error.message);
+    setItems(data||[]);
+    onCount?.((data||[]).filter(p=>p.active).length);
+  }
+  useEffect(()=>{load()},[]);
+
+  async function toggleActive(player){
+    const next=!player.active;
+    const payload={active:next,end_date:next?null:(player.end_date||toISO(new Date()))};
+    const {error}=await supabase.from("players").update(payload).eq("id",player.id);
+    if(error)return alert(error.message);
+    load();
+  }
+
+  async function remove(player){
+    if(!confirm(`¿Eliminar definitivamente a "${player.name}"? Para conservar el historial es preferible marcarlo como inactivo.`))return;
+    const {error}=await supabase.from("players").delete().eq("id",player.id);
+    if(error)return alert(error.message);
+    load();
+  }
+
+  const filtered=useMemo(()=>items.filter(player=>{
+    const q=query.trim().toLowerCase();
+    return (!q||player.name.toLowerCase().includes(q)||(player.position||"").toLowerCase().includes(q)||String(player.number??"").includes(q))
+      &&(status==="all"||(status==="active"?player.active:!player.active));
+  }),[items,query,status]);
+
+  return <>
+    <div className="page-title-row">
+      <div><p className="overline">Equipo</p><h2>Jugadores</h2>
+        <p className="subtext">Gestiona la plantilla, altas, bajas, dorsales y estado activo.</p></div>
+      <button className="button primary icon-text" onClick={()=>setEditing(null)}><UserPlus size={18}/>Añadir jugador</button>
+    </div>
+
+    <section className="players-summary">
+      <article className="card-panel"><UserCheck size={24}/><div><strong>{items.filter(p=>p.active).length}</strong><span>Jugadores activos</span></div></article>
+      <article className="card-panel"><UserX size={24}/><div><strong>{items.filter(p=>!p.active).length}</strong><span>Jugadores inactivos</span></div></article>
+      <article className="card-panel"><Users size={24}/><div><strong>{items.length}</strong><span>Total histórico</span></div></article>
+    </section>
+
+    <section className="filters card-panel players-filters">
+      <label className="search-field"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar por nombre, dorsal o posición…"/></label>
+      <select value={status} onChange={e=>setStatus(e.target.value)}>
+        <option value="active">Solo activos</option>
+        <option value="inactive">Solo inactivos</option>
+        <option value="all">Todos</option>
+      </select>
+      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
+    </section>
+
+    {error&&<div className="error">{error}</div>}
+    {loading?<div className="empty">Cargando jugadores…</div>:filtered.length===0?
+      <section className="empty card-panel"><Users size={38}/><h3>No hay jugadores</h3><p>Añade el primer jugador de la plantilla.</p></section>:
+      <section className="players-grid">
+        {filtered.map(player=><article className={`player-card card-panel ${player.active?"":"inactive"}`} key={player.id}>
+          <div className="player-number">{player.number??"—"}</div>
+          <div className="player-info">
+            <div className="player-heading"><div><h3>{player.name}</h3><p>{player.position||"Sin posición definida"}</p></div>
+              <span className={player.active?"status-active":"status-inactive"}>{player.active?"Activo":"Inactivo"}</span>
+            </div>
+            <div className="player-dates">
+              <span><b>Alta:</b> {formatDate(player.start_date)}</span>
+              {player.end_date&&<span><b>Baja:</b> {formatDate(player.end_date)}</span>}
+            </div>
+            {player.notes&&<p className="player-notes">{player.notes}</p>}
+            <div className="player-actions">
+              <button className="button secondary icon-text" onClick={()=>setEditing(player)}><Pencil size={16}/>Editar</button>
+              <button className="button secondary icon-text" onClick={()=>toggleActive(player)}>
+                {player.active?<><UserX size={16}/>Dar de baja</>:<><UserCheck size={16}/>Reactivar</>}
+              </button>
+              <button className="delete-button" onClick={()=>remove(player)} title="Eliminar definitivamente"><Trash2 size={17}/></button>
+            </div>
+          </div>
+        </article>)}
+      </section>}
+    {editing!==undefined&&<PlayerModal player={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
+  </>
+}
+
+
 function Placeholder({title,text}){
   return <section className="placeholder card-panel"><h2>{title}</h2><p>{text}</p></section>
 }
@@ -769,7 +937,7 @@ function Dashboard({counts,setActive}){
     {label:"Ejercicios",value:counts.exercises,color:"blue",icon:BookOpen},
     {label:"Mesociclos",value:counts.mesocycles||0,color:"green",icon:CalendarDays},
     {label:"Sesiones",value:counts.sessions||0,color:"purple",icon:ClipboardList},
-    {label:"Jugadores",value:0,color:"orange",icon:Users},
+    {label:"Jugadores",value:counts.players||0,color:"orange",icon:Users},
   ];
   const quick=[
     {label:"Nueva sesión",note:"Crear una nueva sesión",icon:Plus,target:"planificador",color:"blue"},
@@ -816,7 +984,7 @@ function Sidebar({active,setActive,open,setOpen}){
 function App(){
   const [active,setActive]=useState("inicio");
   const [open,setOpen]=useState(false);
-  const [counts,setCounts]=useState({exercises:0,mesocycles:0,sessions:0});
+  const [counts,setCounts]=useState({exercises:0,mesocycles:0,sessions:0,players:0});
   const labels={
     inicio:"Inicio",mesociclos:"Mesociclos",calendario:"Calendario",planificador:"Planificador",
     historial:"Historial",biblioteca:"Ejercicios",favoritos:"Favoritos",jugadores:"Jugadores",
@@ -837,7 +1005,7 @@ function App(){
         {active==="calendario"&&<SeasonCalendar/>} 
         {active==="planificador"&&<SessionsPage onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
         {active==="historial"&&<SessionsPage history onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
-        {active==="jugadores"&&<Placeholder title="Jugadores" text="Se desarrollará en la fase 4."/>}
+        {active==="jugadores"&&<PlayersPage onCount={n=>setCounts(c=>({...c,players:n}))}/>} 
         {active==="asistencia"&&<Placeholder title="Asistencia" text="Se desarrollará en la fase 5."/>}
         {active==="convocatorias"&&<Placeholder title="Convocatorias" text="Se desarrollará en la fase 5."/>}
         {active==="estadisticas"&&<Placeholder title="Estadísticas" text="Se desarrollará en la fase 6."/>}

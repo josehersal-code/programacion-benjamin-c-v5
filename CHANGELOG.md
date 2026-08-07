@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v6.0.1 — Integración de mesociclos y calendario automático
+
+- Los mesociclos dejan de tener un apartado independiente en Planificación: se gestionan (crear/editar) directamente desde el editor de sesión, sin franja propia.
+- Dashboard de Inicio actualizado: temporada, semana actual, próxima sesión, próximo partido, ejercicios, jugadores, sesiones creadas, sesiones realizadas y asistencia media.
+- Calendario: los martes y miércoles de toda la temporada aparecen automáticamente como entrenamientos (aunque aún no exista la sesión); al pulsarlos se abre directamente la sesión (o su creación, si no existe todavía).
+- Calendario: cada fila de semanas muestra su número ("Sem N"), igual que en Planificación.
+- Numeración de semanas de Planificación y Calendario basada en el inicio real de temporada (1 de septiembre de 2026), no en la primera sesión creada.
+- Limpieza de archivos obsoletos de la v5 sueltos en la raíz del proyecto (no se usaban en el build).
+- Versión de la aplicación actualizada a 6.0.1.
+
 ## v6.0 — Rediseño UX
 
 - Interfaz general más compacta y profesional.

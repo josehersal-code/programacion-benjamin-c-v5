@@ -1,6 +1,19 @@
-# Programación Benjamín C · Versión 6.0.3
+# Programación Benjamín C · Versión 6.1.0
 
 Rediseño centrado en uso diario rápido y compacto.
+
+## Antes de publicar la 6.1.0
+
+**Ejecuta primero `supabase/add_season_dates.sql`** en el SQL Editor de Supabase (seguro, no borra datos): añade a la tabla `teams` las columnas `training_start_date` y `match_start_date` que usan las nuevas fechas de temporada. Sin esta query, el panel "Fechas de la temporada" de Planificación no podrá guardar ni cargar nada.
+
+## Cambios en 6.1.0 (sobre 6.0.3)
+
+- Planificación tiene un nuevo panel plegable **"Fechas de la temporada"** con dos fechas independientes:
+  - *Inicio de entrenamientos*: define qué semana es la "Semana 1" en Planificación y Calendario.
+  - *Inicio de partidos*: define desde cuándo se generan automáticamente los partidos de los sábados. No afecta a la numeración de semanas.
+- Planificación → pestaña Temporada tiene un nuevo panel plegable **"Mesociclos"** para editar los mesociclos existentes (nombre, objetivos, fechas) y añadir nuevos más allá de los 3 iniciales, sin crear una franja fija siempre visible.
+- Calendario e Inicio (Dashboard) usan ahora la fecha de inicio de entrenamientos configurada para calcular la semana actual, en vez del 1 de septiembre fijo.
+- Asistencia y Convocatorias muestran primero las fechas más próximas (antes aparecían las más lejanas primero) y tienen un filtro "Desde" por fecha.
 
 ## Despliegue alternativo en Vercel (además de Netlify)
 
@@ -72,4 +85,4 @@ Después sube todos los archivos al repositorio de GitHub y haz commit:
 
 ## Identidad de la aplicación
 
-En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.0.3 · Desarrollado por José A. Herrera.
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.1.0 · Desarrollado por José A. Herrera.

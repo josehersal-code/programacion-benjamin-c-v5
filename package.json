@@ -1,7 +1,7 @@
 {
   "name": "programacion-benjamin-c-v5",
   "private": true,
-  "version": "6.0.3",
+  "version": "6.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

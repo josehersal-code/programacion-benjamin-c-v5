@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## v6.1.0 — Fechas de temporada configurables, mesociclos editables y orden de asistencia
+
+- **Ejecuta primero `supabase/add_season_dates.sql`** en el SQL Editor: añade a `teams` las columnas `training_start_date` y `match_start_date` (rellenadas por defecto con 1 de septiembre de 2026). Sin esta query, Planificación no podrá cargar ni guardar las nuevas fechas.
+- Planificación → nuevo panel plegable "Fechas de la temporada" con dos campos independientes:
+  - **Inicio de entrenamientos**: esa semana pasa a ser la "Semana 1" tanto en Planificación como en Calendario (sustituye a la fecha fija de 1 de septiembre que causaba el desajuste "Sem 3" en sesiones tituladas "Semana 1").
+  - **Inicio de partidos**: fecha a partir de la cual se generan automáticamente los partidos de los sábados. Es totalmente independiente de la anterior: cambiarla no afecta a la numeración de semanas.
+- Planificación → pestaña Temporada: nuevo panel plegable "Mesociclos" con la lista de mesociclos existentes (se puede pulsar cada uno para editar nombre/objetivos/fechas) y un botón "Nuevo mesociclo" para añadir más de los 3 iniciales. Sigue sin haber una franja fija siempre visible: todo queda dentro de un desplegable, integrado en Planificación.
+- Calendario: la numeración de semanas y el rango de martes/miércoles de entrenamiento ahora usan la fecha de inicio de entrenamientos configurada (antes usaban siempre el 1 de septiembre fijo); los partidos automáticos de los sábados usan la fecha de inicio de partidos configurada.
+- Inicio (Dashboard): el KPI "Semana actual" usa también la fecha de inicio de entrenamientos configurada, para ser coherente con Planificación y Calendario.
+- Asistencia y Convocatorias: se invierte el orden de la tabla para mostrar primero las fechas más próximas y al final las más lejanas; se añade un filtro "Desde" (fecha) para acotar el listado.
+- Asistencia: se corrige un fallo por el que la generación automática de partidos de los sábados ignoraba la fecha de inicio de partidos configurada.
+
+## Nota (sin cambio de código) — Restricciones CHECK de 'activities'/'attendance'
+
+- Tras desplegar en Vercel, apareció "new row for relation "activities" violates check constraint "activities_status_check"": las restricciones CHECK reales de `status`/`type` en Supabase eran de un esquema anterior y no coincidían con los valores que usa la app.
+- Nuevo `supabase/fix_check_constraints.sql`: sustituye esas restricciones por las correctas (`planned/completed/cancelled/postponed` para `activities.status`, `training/match` para `activities.type`, y el equivalente en `attendance.status`). No borra datos; incluye diagnóstico previo por si algún dato existente no encajase.
+
 ## v6.0.3 — Reparación real del esquema de 'activities'
 
 - Diagnóstico confirmado con el error de Supabase "Could not find the 'home_away' column of 'activities' in the schema cache": la tabla `activities` ya existía con un esquema antiguo/incompleto, y `create table if not exists` (fase5_asistencia.sql) no añade columnas a una tabla ya existente.

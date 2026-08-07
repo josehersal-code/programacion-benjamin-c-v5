@@ -1,6 +1,12 @@
-# Programación Benjamín C · Versión 6.0.1
+# Programación Benjamín C · Versión 6.0.2
 
 Rediseño centrado en uso diario rápido y compacto.
+
+## Cambios en 6.0.2 (sobre 6.0.1)
+
+- Los fallos al hablar con Supabase (partidos automáticos, abrir asistencia) ahora se muestran en pantalla o como alerta, en vez de no hacer nada.
+- Script `supabase/fix_dias_sesion.sql` para revisar y mover a martes/miércoles las sesiones que quedaron creadas en lunes/jueves por error.
+- Si los partidos de los sábados no aparecen en el Calendario, o el botón "Asistencia" de una sesión no abre nada: vuelve a ejecutar `supabase/fase5_asistencia.sql` (es seguro repetirlo) para asegurar que la tabla `activities`/`attendance` y sus permisos existen correctamente, y revisa el aviso en rojo que ahora aparece en Calendario/Convocatorias si algo sigue fallando.
 
 ## Cambios en 6.0.1 (sobre 6.0)
 
@@ -31,17 +37,16 @@ Rediseño centrado en uso diario rápido y compacto.
 
 ## Antes de publicar
 
-No hace falta ejecutar ninguna query nueva en Supabase para pasar de 6.0 a 6.0.1 (no hay cambios de esquema; los mesociclos siguen usando las mismas tablas de siempre).
+No hace falta ejecutar ninguna query nueva de esquema para pasar de 6.0.1 a 6.0.2. Sí conviene:
 
-Si vienes directamente desde v5.x, ejecuta una vez en Supabase:
-
-`supabase/version6_ux.sql`
+1. Volver a ejecutar `supabase/fase5_asistencia.sql` (seguro, no borra datos) si los partidos o la asistencia no funcionaban.
+2. Revisar y, si aplica, ejecutar `supabase/fix_dias_sesion.sql` para corregir sesiones en lunes/jueves.
 
 Después sube todos los archivos al repositorio de GitHub y haz commit:
 
-`Versión 6.0.1: mesociclos integrados y calendario automático`
+`Versión 6.0.2: errores visibles + fix de días de sesión`
 
 
 ## Identidad de la aplicación
 
-En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.0.1 · Desarrollado por José A. Herrera.
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.0.2 · Desarrollado por José A. Herrera.

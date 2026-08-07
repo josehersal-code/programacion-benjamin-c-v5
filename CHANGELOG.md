@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v6.0.2 — Corrección de partidos, asistencia y días de sesión
+
+- Los errores de sincronización con Supabase (partidos automáticos, apertura de asistencia) ya no fallan en silencio: ahora se muestran como aviso en pantalla (Calendario/Convocatorias) o como alerta al pulsar el botón, con el mensaje real de la base de datos.
+- Botón "Asistencia" de cada sesión: si no puede abrir o crear el registro de actividad, avisa con el motivo en vez de no hacer nada.
+- Ver `supabase/fix_dias_sesion.sql`: consulta para revisar y, si procede, mover a martes/miércoles las sesiones que se crearon por error en lunes/jueves.
+- Si los partidos automáticos de los sábados o el botón de asistencia seguían sin funcionar antes de esta versión, vuelve a ejecutar `supabase/fase5_asistencia.sql` en el SQL Editor (es seguro re-ejecutarlo, no borra datos) para asegurarte de que la tabla `activities`/`attendance` y sus permisos están bien creados.
+
 ## v6.0.1 — Integración de mesociclos y calendario automático
 
 - Los mesociclos dejan de tener un apartado independiente en Planificación: se gestionan (crear/editar) directamente desde el editor de sesión, sin franja propia.

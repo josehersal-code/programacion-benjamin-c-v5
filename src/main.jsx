@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  BookOpen, CalendarDays, ChevronDown, ClipboardList, History, Home,
-  Image as ImageIcon, LayoutDashboard, Menu, Pencil, Plus, RefreshCw,
-  Search, Settings, ShieldCheck, Star, Trash2, TrendingUp, UserRound,
-  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check, UserPlus, UserCheck, UserX, CircleCheck, CircleX, Ban, Trophy, Dumbbell, Percent, BarChart3, Award
+  Home, CalendarDays, ClipboardList, BookOpen, Users, TrendingUp, Settings,
+  Menu, Search, Plus, Pencil, Trash2, Copy, Printer, Eye, Star, X, Save,
+  Image as ImageIcon, Check, ChevronLeft, ChevronRight, UserPlus, RefreshCw,
+  Trophy, Dumbbell, Percent, Award, BarChart3, CircleCheck, CircleX, Ban
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
+
+const APP_NAME = "Programación Benjamín C";
+const APP_VERSION = "6.0";
+const APP_DEVELOPER = "José A. Herrera";
 
 const PARTS = [
   ["calentamiento","Calentamiento"],
@@ -18,16 +22,20 @@ const PARTS = [
 ];
 const PART_LABEL = Object.fromEntries(PARTS);
 const DIFF_LABEL = {baja:"Baja",media:"Media",alta:"Alta"};
+const SESSION_PARTS = [
+  {id:"calentamiento",label:"Calentamiento",time:"5-10 min"},
+  {id:"inicial",label:"Parte inicial",time:"15-20 min"},
+  {id:"principal",label:"Parte principal",time:"15-20 min"},
+  {id:"partido",label:"Partido / estrategia",time:"10-15 min"},
+  {id:"vuelta",label:"Vuelta a la calma",time:"5-10 min"},
+];
 
 const MENU = [
   {id:"inicio",label:"Inicio",icon:Home},
-  {group:"Temporada",icon:CalendarDays,children:[
-    {id:"mesociclos",label:"Mesociclos"},
+  {group:"Planificación",icon:CalendarDays,children:[
+    {id:"planificacion",label:"Temporada"},
     {id:"calendario",label:"Calendario"},
-  ]},
-  {group:"Sesiones",icon:ClipboardList,children:[
-    {id:"planificador",label:"Planificador"},
-    {id:"historial",label:"Historial"},
+    {id:"historico",label:"Histórico"},
   ]},
   {group:"Biblioteca",icon:BookOpen,children:[
     {id:"biblioteca",label:"Ejercicios"},
@@ -38,1474 +46,202 @@ const MENU = [
     {id:"asistencia",label:"Asistencia"},
     {id:"convocatorias",label:"Convocatorias"},
   ]},
-  {id:"estadisticas",label:"Estadísticas",icon:TrendingUp},
-  {id:"configuracion",label:"Configuración",icon:Settings},
+  {id:"estadisticas",label:"Análisis",icon:TrendingUp},
 ];
 
+function fmtDate(value, short=false){
+  if(!value)return "—";
+  return new Intl.DateTimeFormat("es-ES",short?{weekday:"short",day:"numeric",month:"short"}:{day:"2-digit",month:"short",year:"numeric"}).format(new Date(value+"T12:00:00"));
+}
+function iso(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`}
+function mondayOf(value){
+  const d=new Date(value+"T12:00:00"), day=(d.getDay()+6)%7;
+  d.setDate(d.getDate()-day);return d;
+}
 function resizeImage(file){
   return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onerror=reject;
-    reader.onload=()=>{
-      const img=new Image();
-      img.onerror=reject;
-      img.onload=()=>{
-        const max=1200;
-        let w=img.width,h=img.height;
-        if(w>max){h=Math.round(h*max/w);w=max}
-        if(h>max){w=Math.round(w*max/h);h=max}
-        const c=document.createElement("canvas");
-        c.width=w;c.height=h;
-        c.getContext("2d").drawImage(img,0,0,w,h);
-        resolve(c.toDataURL("image/jpeg",.8));
-      };
-      img.src=reader.result;
-    };
-    reader.readAsDataURL(file);
+    const r=new FileReader();r.onerror=reject;r.onload=()=>{
+      const img=new Image();img.onerror=reject;img.onload=()=>{
+        const max=1400;let w=img.width,h=img.height;
+        if(w>max){h=Math.round(h*max/w);w=max} if(h>max){w=Math.round(w*max/h);h=max}
+        const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(c.toDataURL("image/jpeg",.82));
+      };img.src=r.result;
+    };r.readAsDataURL(file);
   });
+}
+
+function ModalShell({title,kicker,onClose,children,className=""}){
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className={`modal ${className}`}>
+      <header className="modal-head"><div><small>{kicker}</small><h2>{title}</h2></div><button className="icon-btn" onClick={onClose}><X/></button></header>
+      {children}
+    </div>
+  </div>
 }
 
 function ExerciseModal({exercise,onClose,onSaved}){
-  const [form,setForm]=useState(exercise||{
-    name:"",type:"",difficulty:"baja",part:"inicial",description:"",image_url:"",favorite:false
-  });
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState("");
+  const [form,setForm]=useState(exercise||{name:"",type:"",difficulty:"baja",part:"inicial",description:"",image_url:"",favorite:false});
+  const [busy,setBusy]=useState(false),[error,setError]=useState("");
   const set=(k,v)=>setForm(x=>({...x,[k]:v}));
-
-  async function chooseImage(e){
-    const file=e.target.files?.[0];
-    if(!file)return;
-    try{set("image_url",await resizeImage(file))}
-    catch{setError("No se pudo procesar la imagen.")}
-  }
-
+  async function image(e){const f=e.target.files?.[0];if(!f)return;try{set("image_url",await resizeImage(f))}catch{setError("No se pudo procesar la imagen.")}}
   async function save(e){
-    e.preventDefault();
-    setError("");
-    if(!form.name.trim()) return setError("Escribe un nombre para el ejercicio.");
-    setBusy(true);
-    const payload={
-      team_id:TEAM_ID,
-      name:form.name.trim(),
-      type:form.type.trim()||null,
-      difficulty:form.difficulty,
-      part:form.part,
-      description:form.description.trim()||null,
-      image_url:form.image_url||null,
-      favorite:Boolean(form.favorite),
-    };
-    let query=exercise?.id
-      ? supabase.from("exercises").update(payload).eq("id",exercise.id)
-      : supabase.from("exercises").insert(payload);
-    let {error}=await query;
-    if(error && error.message.toLowerCase().includes("favorite")){
-      delete payload.favorite;
-      query=exercise?.id
-        ? supabase.from("exercises").update(payload).eq("id",exercise.id)
-        : supabase.from("exercises").insert(payload);
-      ({error}=await query);
-    }
-    setBusy(false);
-    if(error)return setError(error.message);
-    onSaved();
+    e.preventDefault();setError("");if(!form.name.trim())return setError("Escribe un nombre.");setBusy(true);
+    const payload={team_id:TEAM_ID,name:form.name.trim(),type:form.type.trim()||null,difficulty:form.difficulty,part:form.part,description:form.description.trim()||null,image_url:form.image_url||null,favorite:!!form.favorite};
+    const q=exercise?.id?supabase.from("exercises").update(payload).eq("id",exercise.id):supabase.from("exercises").insert(payload);
+    const {error}=await q;setBusy(false);if(error)return setError(error.message);onSaved();
   }
-
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal">
-      <header className="modal-head">
-        <div><small>{exercise?"Editar ejercicio":"Nuevo ejercicio"}</small><h2>Ficha del ejercicio</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <form className="exercise-form" onSubmit={save}>
-        <label className="full">Nombre
-          <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Ej. Posesión 5x2 + transición"/>
-        </label>
-        <label>Parte de la sesión
-          <select value={form.part} onChange={e=>set("part",e.target.value)}>
-            {PARTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
-          </select>
-        </label>
-        <label>Dificultad
-          <select value={form.difficulty} onChange={e=>set("difficulty",e.target.value)}>
-            <option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option>
-          </select>
-        </label>
-        <label className="full">Tipología
-          <input value={form.type||""} onChange={e=>set("type",e.target.value)} placeholder="Posesión, circuito técnico, finalización…"/>
-        </label>
-        <label className="full">Descripción
-          <textarea rows="7" value={form.description||""} onChange={e=>set("description",e.target.value)} placeholder="Organización, desarrollo, consignas y variantes…"/>
-        </label>
-        <label className="favorite-check full">
-          <input type="checkbox" checked={Boolean(form.favorite)} onChange={e=>set("favorite",e.target.checked)}/>
-          <Star size={18}/> Marcar como favorito
-        </label>
-        <div className="image-field full">
-          <span>Imagen del ejercicio</span>
-          <label className="upload-button"><ImageIcon size={18}/>Seleccionar imagen
-            <input hidden type="file" accept="image/*" onChange={chooseImage}/>
-          </label>
-          {form.image_url&&<div className="image-preview">
-            <img src={form.image_url} alt="Vista previa"/>
-            <button type="button" onClick={()=>set("image_url","")}>Quitar imagen</button>
-          </div>}
-        </div>
-        {error&&<div className="error full">{error}</div>}
-        <footer className="form-footer full">
-          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
-          <button className="button primary" disabled={busy}>{busy?"Guardando…":"Guardar ejercicio"}</button>
-        </footer>
-      </form>
-    </div>
-  </div>
+  return <ModalShell title="Ficha del ejercicio" kicker={exercise?"Editar ejercicio":"Nuevo ejercicio"} onClose={onClose} className="exercise-modal">
+    <form className="form-grid modal-scroll" onSubmit={save}>
+      <label className="full">Nombre<input value={form.name} onChange={e=>set("name",e.target.value)}/></label>
+      <label>Parte<select value={form.part} onChange={e=>set("part",e.target.value)}>{PARTS.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label>
+      <label>Dificultad<select value={form.difficulty} onChange={e=>set("difficulty",e.target.value)}><option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option></select></label>
+      <label className="full">Tipología<input value={form.type||""} onChange={e=>set("type",e.target.value)}/></label>
+      <label className="full">Descripción<textarea rows="5" value={form.description||""} onChange={e=>set("description",e.target.value)}/></label>
+      <label className="check full"><input type="checkbox" checked={!!form.favorite} onChange={e=>set("favorite",e.target.checked)}/><Star size={16}/> Favorito</label>
+      <div className="full upload-zone"><b>Imagen</b><label className="button secondary"><ImageIcon size={17}/> Seleccionar<input hidden type="file" accept="image/*" onChange={image}/></label>{form.image_url&&<img src={form.image_url} alt="Vista previa"/>}</div>
+      {error&&<div className="error full">{error}</div>}
+      <footer className="modal-footer full"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}><Save size={16}/>{busy?"Guardando…":"Guardar"}</button></footer>
+    </form>
+  </ModalShell>
 }
 
-function Library({favoritesOnly=false,onCount}){
-  const [items,setItems]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-  const [query,setQuery]=useState("");
-  const [part,setPart]=useState("");
-  const [diff,setDiff]=useState("");
-  const [editing,setEditing]=useState(undefined);
-  const [zoom,setZoom]=useState("");
-
-  async function load(){
-    if(!configured){setError("Faltan las variables de Supabase en Netlify.");setLoading(false);return}
-    setLoading(true);setError("");
-    const {data,error}=await supabase.from("exercises").select("*").eq("team_id",TEAM_ID).order("created_at",{ascending:false});
-    setLoading(false);
-    if(error)return setError(error.message);
-    setItems(data||[]);onCount?.(data?.length||0);
-  }
+function Library({favorites=false}){
+  const [items,setItems]=useState([]),[query,setQuery]=useState(""),[part,setPart]=useState(""),[diff,setDiff]=useState(""),[editing,setEditing]=useState(undefined),[zoom,setZoom]=useState(""),[loading,setLoading]=useState(true),[error,setError]=useState("");
+  async function load(){setLoading(true);const {data,error}=await supabase.from("exercises").select("*").eq("team_id",TEAM_ID).order("name");setLoading(false);if(error)return setError(error.message);setItems(data||[])}
   useEffect(()=>{load()},[]);
-
-  async function remove(ex){
-    if(!confirm(`¿Eliminar "${ex.name}"?`))return;
-    const {error}=await supabase.from("exercises").delete().eq("id",ex.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  async function toggleFavorite(ex){
-    if(!("favorite" in ex)){
-      alert("Para activar favoritos hay que añadir primero la columna favorite en Supabase. La biblioteca funciona sin ella.");
-      return;
-    }
-    const {error}=await supabase.from("exercises").update({favorite:!ex.favorite}).eq("id",ex.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  const filtered=useMemo(()=>items.filter(ex=>{
-    const q=query.toLowerCase().trim();
-    return (!q||ex.name.toLowerCase().includes(q)||(ex.type||"").toLowerCase().includes(q))
-      &&(!part||ex.part===part)&&(!diff||ex.difficulty===diff)
-      &&(!favoritesOnly||Boolean(ex.favorite));
-  }),[items,query,part,diff,favoritesOnly]);
-
+  async function remove(ex){if(!confirm(`¿Eliminar "${ex.name}"?`))return;const {error}=await supabase.from("exercises").delete().eq("id",ex.id);if(error)alert(error.message);else load()}
+  async function fav(ex){const {error}=await supabase.from("exercises").update({favorite:!ex.favorite}).eq("id",ex.id);if(error)alert(error.message);else load()}
+  async function duplicate(ex){const {id,created_at,...copy}=ex;copy.name=`${ex.name} · copia`;const {error}=await supabase.from("exercises").insert(copy);if(error)alert(error.message);else load()}
+  const filtered=items.filter(ex=>{const q=query.toLowerCase();return(!q||ex.name.toLowerCase().includes(q)||(ex.type||"").toLowerCase().includes(q))&&(!part||ex.part===part)&&(!diff||ex.difficulty===diff)&&(!favorites||ex.favorite)});
   return <>
-    <div className="page-title-row">
-      <div><p className="overline">Biblioteca</p><h2>{favoritesOnly?"Ejercicios favoritos":"Ejercicios"}</h2>
-        <p className="subtext">Biblioteca compartida del Benjamín C.</p></div>
-      {!favoritesOnly&&<button className="button primary icon-text" onClick={()=>setEditing(null)}><Plus size={18}/>Nuevo ejercicio</button>}
-    </div>
-    <section className="filters card-panel">
-      <label className="search-field"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar por nombre o tipología…"/></label>
-      <select value={part} onChange={e=>setPart(e.target.value)}><option value="">Todas las partes</option>{PARTS.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select>
-      <select value={diff} onChange={e=>setDiff(e.target.value)}><option value="">Todas las dificultades</option><option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option></select>
-      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
-    </section>
+    <PageHead title={favorites?"Favoritos":"Ejercicios"} kicker="Biblioteca" subtitle={`${filtered.length} ejercicios visibles`} action={!favorites&&<button className="button primary" onClick={()=>setEditing(null)}><Plus/>Nuevo</button>}/>
+    <div className="compact-filters"><label><Search/><input placeholder="Buscar…" value={query} onChange={e=>setQuery(e.target.value)}/></label><select value={part} onChange={e=>setPart(e.target.value)}><option value="">Todas las partes</option>{PARTS.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select><select value={diff} onChange={e=>setDiff(e.target.value)}><option value="">Dificultad</option><option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option></select></div>
     {error&&<div className="error">{error}</div>}
-    {loading?<div className="empty">Cargando ejercicios…</div>:filtered.length===0?<section className="empty card-panel"><BookOpen size={38}/><h3>No hay ejercicios</h3><p>{favoritesOnly?"Todavía no hay ejercicios favoritos.":"Crea el primero con el botón “Nuevo ejercicio”."}</p></section>:
-    <section className="exercise-grid">
-      {filtered.map(ex=><article className="exercise-card" key={ex.id}>
-        <div className="image-wrap">
-          <button className="exercise-image" onClick={()=>ex.image_url&&setZoom(ex.image_url)}>
-            {ex.image_url?<img src={ex.image_url} alt={ex.name}/>:<span><ImageIcon/>Sin imagen</span>}
-          </button>
-          <button className={`favorite-button ${ex.favorite?"active":""}`} onClick={()=>toggleFavorite(ex)} title="Favorito"><Star size={18} fill={ex.favorite?"currentColor":"none"}/></button>
-        </div>
-        <div className="exercise-content">
-          <h3>{ex.name}</h3>
-          <div className="tags"><span>{PART_LABEL[ex.part]||ex.part}</span>{ex.type&&<span>{ex.type}</span>}<span className={`difficulty ${ex.difficulty}`}>{DIFF_LABEL[ex.difficulty]||ex.difficulty}</span></div>
-          <p>{ex.description||"Sin descripción."}</p>
-          <div className="exercise-actions">
-            <button className="button secondary icon-text" onClick={()=>setEditing(ex)}><Pencil size={16}/>Editar</button>
-            <button className="delete-button" onClick={()=>remove(ex)}><Trash2 size={17}/></button>
-          </div>
-        </div>
-      </article>)}
-    </section>}
+    {loading?<Empty text="Cargando ejercicios…"/>:<div className="exercise-grid v6">{filtered.map(ex=><article className="exercise-card v6" key={ex.id}>
+      <button className="exercise-photo" onClick={()=>ex.image_url&&setZoom(ex.image_url)}>{ex.image_url?<img src={ex.image_url}/>:<ImageIcon/>}</button>
+      <div className="exercise-info"><div className="exercise-title"><h3>{ex.name}</h3><button className={`star ${ex.favorite?"on":""}`} onClick={()=>fav(ex)}><Star size={17} fill={ex.favorite?"currentColor":"none"}/></button></div><div className="mini-tags"><span>{ex.type||"Sin tipología"}</span><span>{DIFF_LABEL[ex.difficulty]}</span><span>{PART_LABEL[ex.part]}</span></div><p>{ex.description||"Sin descripción."}</p><div className="row-actions"><button onClick={()=>setEditing(ex)}>Editar</button><button onClick={()=>duplicate(ex)}>Duplicar</button><button className="danger-link" onClick={()=>remove(ex)}>Eliminar</button></div></div>
+    </article>)}</div>}
     {editing!==undefined&&<ExerciseModal exercise={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
-    {zoom&&<div className="zoom" onClick={()=>setZoom("")}><button><X/></button><img src={zoom} alt="Imagen ampliada" onClick={e=>e.stopPropagation()}/></div>}
+    {zoom&&<div className="zoom" onClick={()=>setZoom("")}><button><X/></button><img src={zoom}/></div>}
   </>
 }
 
+function PageHead({title,kicker,subtitle,action}){return <div className="page-head"><div><small>{kicker}</small><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div>{action&&<div>{action}</div>}</div>}
+function Empty({text}){return <div className="empty compact">{text}</div>}
 
 function MesocycleModal({item,onClose,onSaved}){
-  const [form,setForm]=useState(item||{
-    name:"",start_date:"",end_date:"",objectives:"",sort_order:0
-  });
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState("");
+  const [form,setForm]=useState(item||{name:"",start_date:"",end_date:"",objectives:"",sort_order:0});const [error,setError]=useState("");
   const set=(k,v)=>setForm(x=>({...x,[k]:v}));
-
-  async function save(e){
-    e.preventDefault();
-    setError("");
-    if(!form.name.trim()) return setError("Escribe el nombre del mesociclo.");
-    if(form.start_date && form.end_date && form.end_date<form.start_date){
-      return setError("La fecha final no puede ser anterior a la inicial.");
-    }
-    setBusy(true);
-    const payload={
-      team_id:TEAM_ID,
-      name:form.name.trim(),
-      start_date:form.start_date||null,
-      end_date:form.end_date||null,
-      objectives:form.objectives.trim()||null,
-      sort_order:Number(form.sort_order)||0,
-    };
-    const query=item?.id
-      ? supabase.from("mesocycles").update(payload).eq("id",item.id)
-      : supabase.from("mesocycles").insert(payload);
-    const {error}=await query;
-    setBusy(false);
-    if(error)return setError(error.message);
-    onSaved();
-  }
-
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal mesocycle-modal">
-      <header className="modal-head">
-        <div><small>{item?"Editar mesociclo":"Nuevo mesociclo"}</small><h2>Planificación del periodo</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <form className="exercise-form" onSubmit={save}>
-        <label className="full">Nombre
-          <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Ej. Mesociclo 1 · Adaptación"/>
-        </label>
-        <label>Fecha de inicio
-          <input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/>
-        </label>
-        <label>Fecha final
-          <input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/>
-        </label>
-        <label className="full">Objetivos
-          <textarea rows="7" value={form.objectives||""} onChange={e=>set("objectives",e.target.value)}
-            placeholder="Objetivo general y objetivos específicos del mesociclo…"/>
-        </label>
-        {error&&<div className="error full">{error}</div>}
-        <footer className="form-footer full">
-          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
-          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar mesociclo"}</button>
-        </footer>
-      </form>
-    </div>
-  </div>
+  async function save(e){e.preventDefault();if(!form.name.trim())return setError("Escribe un nombre.");const payload={team_id:TEAM_ID,name:form.name.trim(),start_date:form.start_date||null,end_date:form.end_date||null,objectives:form.objectives||null,sort_order:Number(form.sort_order)||0};const q=item?.id?supabase.from("mesocycles").update(payload).eq("id",item.id):supabase.from("mesocycles").insert(payload);const {error}=await q;if(error)return setError(error.message);onSaved()}
+  return <ModalShell title="Mesociclo" kicker={item?"Editar":"Nuevo"} onClose={onClose}><form className="form-grid modal-scroll" onSubmit={save}><label className="full">Nombre<input value={form.name} onChange={e=>set("name",e.target.value)}/></label><label>Inicio<input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/></label><label>Fin<input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/></label><label className="full">Objetivos<textarea rows="5" value={form.objectives||""} onChange={e=>set("objectives",e.target.value)}/></label>{error&&<div className="error full">{error}</div>}<footer className="modal-footer full"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary">Guardar</button></footer></form></ModalShell>
 }
 
-function formatDate(value){
-  if(!value)return "Sin fecha";
-  return new Intl.DateTimeFormat("es-ES",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(value+"T12:00:00"));
-}
-
-function Mesocycles({onCount}){
-  const [items,setItems]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-  const [editing,setEditing]=useState(undefined);
-
-  async function load(){
-    setLoading(true);setError("");
-    const {data,error}=await supabase.from("mesocycles").select("*")
-      .eq("team_id",TEAM_ID).order("sort_order").order("start_date");
-    setLoading(false);
-    if(error)return setError(error.message);
-    setItems(data||[]);onCount?.(data?.length||0);
-  }
-  useEffect(()=>{load()},[]);
-
-  async function remove(item){
-    if(!confirm(`¿Eliminar "${item.name}"? Las sesiones vinculadas conservarán su fecha, pero quedarán sin mesociclo.`))return;
-    const {error}=await supabase.from("mesocycles").delete().eq("id",item.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  return <>
-    <div className="page-title-row">
-      <div><p className="overline">Temporada</p><h2>Mesociclos</h2>
-        <p className="subtext">Divide la temporada en los periodos que necesites y modifica fechas y objetivos.</p></div>
-      <button className="button primary icon-text" onClick={()=>setEditing(null)}><Plus size={18}/>Añadir mesociclo</button>
-    </div>
-    {error&&<div className="error">{error}</div>}
-    {loading?<div className="empty">Cargando mesociclos…</div>:items.length===0?
-      <section className="empty card-panel"><CalendarDays size={38}/><h3>No hay mesociclos</h3><p>Crea el primero para comenzar la planificación.</p></section>:
-      <section className="mesocycle-grid">
-        {items.map((item,index)=><article className="mesocycle-card card-panel" key={item.id}>
-          <div className={`mesocycle-number tone-${index%4}`}>{index+1}</div>
-          <div className="mesocycle-main">
-            <div className="mesocycle-title"><div><small>MESOCICLO {index+1}</small><h3>{item.name}</h3></div>
-              <div className="mesocycle-actions">
-                <button className="icon-button bordered" onClick={()=>setEditing(item)} title="Editar"><Pencil size={17}/></button>
-                <button className="delete-button" onClick={()=>remove(item)} title="Eliminar"><Trash2 size={17}/></button>
-              </div>
-            </div>
-            <div className="date-range"><CalendarDays size={17}/><span>{formatDate(item.start_date)} — {formatDate(item.end_date)}</span></div>
-            <div className="objective-box"><b>Objetivos</b><p>{item.objectives||"Sin objetivos definidos."}</p></div>
-          </div>
-        </article>)}
-      </section>}
-    {editing!==undefined&&<MesocycleModal item={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
-  </>
-}
-
-function monthKey(date){
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
-}
-function toISO(date){
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
-}
-
-function SeasonCalendar(){
-  const [month,setMonth]=useState(new Date(2026,8,1));
-  const [mesocycles,setMesocycles]=useState([]);
-  const [sessions,setSessions]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-
-  async function load(){
-    setLoading(true);setError("");
-    const start=new Date(month.getFullYear(),month.getMonth(),1);
-    const end=new Date(month.getFullYear(),month.getMonth()+1,0);
-    const [m,s]=await Promise.all([
-      supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID).order("sort_order"),
-      supabase.from("sessions").select("*").eq("team_id",TEAM_ID)
-        .gte("session_date",toISO(start)).lte("session_date",toISO(end)).order("session_date")
-    ]);
-    setLoading(false);
-    if(m.error||s.error)return setError((m.error||s.error).message);
-    setMesocycles(m.data||[]);setSessions(s.data||[]);
-  }
-  useEffect(()=>{load()},[month]);
-
-  const cells=useMemo(()=>{
-    const first=new Date(month.getFullYear(),month.getMonth(),1);
-    const last=new Date(month.getFullYear(),month.getMonth()+1,0);
-    const mondayIndex=(first.getDay()+6)%7;
-    const list=[];
-    for(let i=0;i<mondayIndex;i++)list.push(null);
-    for(let d=1;d<=last.getDate();d++)list.push(new Date(month.getFullYear(),month.getMonth(),d));
-    while(list.length%7)list.push(null);
-    return list;
-  },[month]);
-
-  function cycleFor(iso){
-    return mesocycles.find(m=>(!m.start_date||iso>=m.start_date)&&(!m.end_date||iso<=m.end_date));
-  }
-
-  return <>
-    <div className="page-title-row">
-      <div><p className="overline">Temporada</p><h2>Calendario</h2>
-        <p className="subtext">Vista mensual de los mesociclos y de las sesiones que se crearán en la siguiente fase.</p></div>
-      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
-    </div>
-    <section className="calendar-panel card-panel">
-      <header className="calendar-toolbar">
-        <button className="icon-button bordered" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><ChevronLeft/></button>
-        <h3>{new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric"}).format(month)}</h3>
-        <button className="icon-button bordered" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><ChevronRight/></button>
-      </header>
-      {error&&<div className="error">{error}</div>}
-      {loading?<div className="empty">Cargando calendario…</div>:<>
-        <div className="weekday-row">{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(x=><b key={x}>{x}</b>)}</div>
-        <div className="calendar-grid">
-          {cells.map((date,index)=>{
-            if(!date)return <div className="calendar-cell empty-day" key={`e${index}`}/>;
-            const iso=toISO(date), cycle=cycleFor(iso);
-            const daySessions=sessions.filter(s=>s.session_date===iso);
-            return <div className="calendar-cell" key={iso}>
-              <span className="day-number">{date.getDate()}</span>
-              {cycle&&<div className="cycle-pill">{cycle.name}</div>}
-              {daySessions.map(s=><div className="session-pill" key={s.id}>Sesión {s.kind}{s.title?` · ${s.title}`:""}</div>)}
-            </div>
-          })}
-        </div>
-      </>}
-    </section>
-    <section className="calendar-legend card-panel">
-      <span><i className="legend-cycle"/>Mesociclo activo</span>
-      <span><i className="legend-session"/>Sesión programada</span>
-    </section>
-  </>
-}
-
-
-
-const SESSION_PARTS = [
-  {id:"calentamiento",label:"Calentamiento",time:"5-10 min"},
-  {id:"inicial",label:"Parte inicial",time:"15-20 min"},
-  {id:"principal",label:"Parte principal",time:"15-20 min"},
-  {id:"partido",label:"Partido / estrategia",time:"10-15 min"},
-  {id:"vuelta",label:"Vuelta a la calma",time:"5-10 min"},
-];
-
-function ExercisePicker({part,selectedId,onChoose,onClose}){
-  const [items,setItems]=useState([]);
-  const [query,setQuery]=useState("");
-  const [diff,setDiff]=useState("");
-  const [loading,setLoading]=useState(true);
-  const [zoom,setZoom]=useState("");
-
-  useEffect(()=>{
-    supabase.from("exercises").select("*").eq("team_id",TEAM_ID).order("name")
-      .then(({data})=>{setItems(data||[]);setLoading(false)});
-  },[]);
-
-  const filtered=useMemo(()=>items.filter(ex=>{
-    const q=query.trim().toLowerCase();
-    return (!q||ex.name.toLowerCase().includes(q)||(ex.type||"").toLowerCase().includes(q))
-      &&(!diff||ex.difficulty===diff)
-      &&(ex.part===part||true);
-  }).sort((a,b)=>{
-    const ap=a.part===part?0:1,bp=b.part===part?0:1;
-    return ap-bp||a.name.localeCompare(b.name);
-  }),[items,query,diff,part]);
-
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal picker-modal">
-      <header className="modal-head">
-        <div><small>Elegir ejercicio</small><h2>{PART_LABEL[part]||part}</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <div className="picker-tools">
-        <label className="search-field"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar por nombre o tipología…"/></label>
-        <select value={diff} onChange={e=>setDiff(e.target.value)}>
-          <option value="">Todas las dificultades</option>
-          <option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option>
-        </select>
-      </div>
-      <div className="picker-scroll">
-        {loading?<div className="empty">Cargando ejercicios…</div>:
-        <div className="picker-grid">
-          {filtered.map(ex=><article className={`picker-card ${selectedId===ex.id?"selected":""}`} key={ex.id}>
-            <button className="picker-image" type="button" onClick={()=>ex.image_url&&setZoom(ex.image_url)}>
-              {ex.image_url?<img src={ex.image_url} alt={ex.name}/>:<span><ImageIcon/>Sin imagen</span>}
-            </button>
-            <div className="picker-content">
-              <h3>{ex.name}</h3>
-              <div className="tags">
-                <span>{PART_LABEL[ex.part]||ex.part}</span>
-                {ex.type&&<span>{ex.type}</span>}
-                <span className={`difficulty ${ex.difficulty}`}>{DIFF_LABEL[ex.difficulty]||ex.difficulty}</span>
-              </div>
-              <p>{ex.description||"Sin descripción."}</p>
-              <button type="button" className="button primary icon-text" onClick={()=>onChoose(ex)}>
-                <Check size={17}/>{selectedId===ex.id?"Seleccionado":"Elegir"}
-              </button>
-            </div>
-          </article>)}
-        </div>}
-      </div>
-      <footer className="picker-footer">
-        <button type="button" className="button secondary" onClick={()=>onChoose(null)}>Vaciar bloque</button>
-        <button type="button" className="button secondary" onClick={onClose}>Cerrar</button>
-      </footer>
-    </div>
-    {zoom&&<div className="zoom nested" onClick={()=>setZoom("")}><button><X/></button><img src={zoom} onClick={e=>e.stopPropagation()}/></div>}
-  </div>
+function ExercisePicker({part,onChoose,onClose}){
+  const [items,setItems]=useState([]),[q,setQ]=useState("");useEffect(()=>{supabase.from("exercises").select("*").eq("team_id",TEAM_ID).order("name").then(({data})=>setItems(data||[]))},[]);
+  const filtered=items.filter(ex=>!q||ex.name.toLowerCase().includes(q.toLowerCase())||(ex.type||"").toLowerCase().includes(q.toLowerCase())).sort((a,b)=>(a.part===part?0:1)-(b.part===part?0:1));
+  return <ModalShell title={`Elegir · ${PART_LABEL[part]}`} kicker="Biblioteca" onClose={onClose} className="picker-modal"><div className="picker-search"><Search/><input placeholder="Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)}/></div><div className="picker-grid modal-scroll">{filtered.map(ex=><button className="picker-card" key={ex.id} onClick={()=>onChoose(ex)}><div>{ex.image_url?<img src={ex.image_url}/>:<ImageIcon/>}</div><section><b>{ex.name}</b><small>{ex.type||"Sin tipología"} · {DIFF_LABEL[ex.difficulty]}</small><p>{ex.description||""}</p></section></button>)}</div></ModalShell>
 }
 
 function SessionEditor({session,onClose,onSaved}){
-  const emptyBlocks=Object.fromEntries(SESSION_PARTS.map(p=>[p.id,null]));
-  const [form,setForm]=useState({
-    session_date:session?.session_date||"",
-    kind:session?.kind||"A",
-    title:session?.title||"",
-    goal:session?.goal||"",
-    mesocycle_id:session?.mesocycle_id||"",
-    goalkeeper_notes:session?.goalkeeper_notes||"",
-    notes:session?.notes||"",
-  });
-  const [blocks,setBlocks]=useState(emptyBlocks);
-  const [mesocycles,setMesocycles]=useState([]);
-  const [pickerPart,setPickerPart]=useState("");
-  const [busy,setBusy]=useState(false);
-  const [loading,setLoading]=useState(Boolean(session?.id));
-  const [error,setError]=useState("");
+  const [form,setForm]=useState({session_date:session?.session_date||"",kind:session?.kind||"A",title:session?.title||"",goal:session?.goal||"",mesocycle_id:session?.mesocycle_id||"",goalkeeper_notes:session?.goalkeeper_notes||"",notes:session?.notes||"",status:session?.status||"planned"});
+  const empty=Object.fromEntries(SESSION_PARTS.map(p=>[p.id,null]));const [blocks,setBlocks]=useState(empty),[picker,setPicker]=useState(""),[mesos,setMesos]=useState([]),[error,setError]=useState(""),[dragPart,setDragPart]=useState("");
   const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+  useEffect(()=>{supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID).order("sort_order").then(({data})=>setMesos(data||[]));if(session?.id)supabase.from("session_blocks").select("part,exercises(*)").eq("session_id",session.id).then(({data})=>{const n={...empty};(data||[]).forEach(r=>n[r.part]=r.exercises);setBlocks(n)})},[]);
+  function drop(target){if(!dragPart||dragPart===target)return;setBlocks(x=>({...x,[dragPart]:x[target], [target]:x[dragPart]}));setDragPart("")}
+  async function save(e){e.preventDefault();if(!form.session_date)return setError("Selecciona una fecha.");const payload={team_id:TEAM_ID,mesocycle_id:form.mesocycle_id||null,session_date:form.session_date,kind:form.kind,title:form.title||null,goal:form.goal||null,goalkeeper_notes:form.goalkeeper_notes||null,notes:form.notes||null,status:form.status};let id=session?.id;if(id){const {error}=await supabase.from("sessions").update(payload).eq("id",id);if(error)return setError(error.message)}else{const {data,error}=await supabase.from("sessions").insert(payload).select("id").single();if(error)return setError(error.message);id=data.id}await supabase.from("session_blocks").delete().eq("session_id",id);const rows=SESSION_PARTS.filter(p=>blocks[p.id]).map((p,i)=>({session_id:id,exercise_id:blocks[p.id].id,part:p.id,sort_order:i}));if(rows.length){const {error}=await supabase.from("session_blocks").insert(rows);if(error)return setError(error.message)};await ensureTrainingActivity({...payload,id});onSaved()}
+  return <ModalShell title="Sesión de entrenamiento" kicker={session?"Editar":"Nueva sesión"} onClose={onClose} className="session-modal"><form className="session-form modal-scroll" onSubmit={save}><div className="session-meta"><label>Fecha<input type="date" value={form.session_date} onChange={e=>set("session_date",e.target.value)}/></label><label>Sesión<select value={form.kind} onChange={e=>set("kind",e.target.value)}><option>A</option><option>B</option></select></label><label>Mesociclo<select value={form.mesocycle_id} onChange={e=>set("mesocycle_id",e.target.value)}><option value="">Sin asignar</option>{mesos.map(m=><option value={m.id} key={m.id}>{m.name}</option>)}</select></label><label className="wide">Título<input value={form.title} onChange={e=>set("title",e.target.value)}/></label><label className="wide">Objetivo<textarea rows="2" value={form.goal} onChange={e=>set("goal",e.target.value)}/></label></div><div className="blocks-compact">{SESSION_PARTS.map(p=>{const ex=blocks[p.id];return <article className="block-row" key={p.id} onDragOver={e=>e.preventDefault()} onDrop={()=>drop(p.id)}><header><b>{p.label}</b><small>{p.time}</small></header>{ex?<div className="block-selected" draggable onDragStart={()=>setDragPart(p.id)}><div className="block-img">{ex.image_url?<img src={ex.image_url}/>:<ImageIcon/>}</div><div><b>{ex.name}</b><small>{ex.type||""} · {DIFF_LABEL[ex.difficulty]}</small></div><button type="button" onClick={()=>setPicker(p.id)}>Cambiar</button></div>:<button type="button" className="choose-empty" onClick={()=>setPicker(p.id)}>+ Elegir ejercicio</button>}</article>})}</div><div className="session-notes"><label>Porteros<textarea rows="3" value={form.goalkeeper_notes} onChange={e=>set("goalkeeper_notes",e.target.value)}/></label><label>Observaciones<textarea rows="3" value={form.notes} onChange={e=>set("notes",e.target.value)}/></label></div>{error&&<div className="error">{error}</div>}<footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary"><Save/>Guardar sesión</button></footer></form>{picker&&<ExercisePicker part={picker} onClose={()=>setPicker("")} onChoose={ex=>{setBlocks(x=>({...x,[picker]:ex}));setPicker("")}}/>}</ModalShell>
+}
 
-  useEffect(()=>{
-    supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID).order("sort_order")
-      .then(({data})=>setMesocycles(data||[]));
-    if(session?.id){
-      supabase.from("session_blocks").select("part,exercise_id,exercises(*)").eq("session_id",session.id)
-        .then(({data,error})=>{
-          if(error)setError(error.message);
-          const next={...emptyBlocks};
-          (data||[]).forEach(row=>next[row.part]=row.exercises||null);
-          setBlocks(next);setLoading(false);
-        });
-    }
-  },[]);
-
-  async function save(e){
-    e.preventDefault();setError("");
-    if(!form.session_date)return setError("Selecciona una fecha.");
-    setBusy(true);
-    const payload={
-      team_id:TEAM_ID,
-      mesocycle_id:form.mesocycle_id||null,
-      session_date:form.session_date,
-      kind:form.kind,
-      title:form.title.trim()||null,
-      goal:form.goal.trim()||null,
-      goalkeeper_notes:form.goalkeeper_notes.trim()||null,
-      notes:form.notes.trim()||null,
-    };
-    let sessionId=session?.id;
-    if(sessionId){
-      const {error}=await supabase.from("sessions").update(payload).eq("id",sessionId);
-      if(error){setBusy(false);return setError(error.message)}
-    }else{
-      const {data,error}=await supabase.from("sessions").insert(payload).select("id").single();
-      if(error){setBusy(false);return setError(error.message)}
-      sessionId=data.id;
-    }
-
-    const rows=SESSION_PARTS.filter(p=>blocks[p.id]).map((p,index)=>({
-      session_id:sessionId,exercise_id:blocks[p.id].id,part:p.id,sort_order:index
-    }));
-    const {error:deleteError}=await supabase.from("session_blocks").delete().eq("session_id",sessionId);
-    if(deleteError){setBusy(false);return setError(deleteError.message)}
-    if(rows.length){
-      const {error:blockError}=await supabase.from("session_blocks").insert(rows);
-      if(blockError){setBusy(false);return setError(blockError.message)}
-    }
-    setBusy(false);onSaved(sessionId);
-  }
-
-  if(loading)return <div className="modal-backdrop"><div className="modal"><div className="empty">Cargando sesión…</div></div></div>;
-
-  return <div className="modal-backdrop session-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal session-editor-modal">
-      <header className="modal-head">
-        <div><small>{session?"Editar sesión":"Nueva sesión"}</small><h2>Planificador de entrenamiento</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <form className="session-editor-form" onSubmit={save}>
-        <section className="session-meta">
-          <label>Fecha<input type="date" value={form.session_date} onChange={e=>set("session_date",e.target.value)}/></label>
-          <label>Sesión<select value={form.kind} onChange={e=>set("kind",e.target.value)}><option value="A">A</option><option value="B">B</option></select></label>
-          <label>Mesociclo<select value={form.mesocycle_id} onChange={e=>set("mesocycle_id",e.target.value)}>
-            <option value="">Sin asignar</option>{mesocycles.map(m=><option value={m.id} key={m.id}>{m.name}</option>)}
-          </select></label>
-          <label className="wide">Título<input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Ej. Conservación y finalización"/></label>
-          <label className="wide">Objetivo de la sesión<textarea rows="3" value={form.goal} onChange={e=>set("goal",e.target.value)} placeholder="Objetivo técnico, táctico o actitudinal…"/></label>
-        </section>
-
-        <section className="blocks-editor">
-          {SESSION_PARTS.map(part=>{
-            const ex=blocks[part.id];
-            return <article className="session-block-card" key={part.id}>
-              <header><div><h3>{part.label}</h3><small>{part.time}</small></div>
-                <button type="button" className="button secondary" onClick={()=>setPickerPart(part.id)}>{ex?"Cambiar":"Elegir ejercicio"}</button>
-              </header>
-              {ex?<div className="selected-exercise">
-                <button type="button" className="selected-image" onClick={()=>ex.image_url&&window.open(ex.image_url,"_blank")}>
-                  {ex.image_url?<img src={ex.image_url} alt={ex.name}/>:<ImageIcon/>}
-                </button>
-                <div><h4>{ex.name}</h4><div className="tags">{ex.type&&<span>{ex.type}</span>}<span className={`difficulty ${ex.difficulty}`}>{DIFF_LABEL[ex.difficulty]}</span></div><p>{ex.description||"Sin descripción."}</p></div>
-              </div>:<div className="empty-block">No se ha elegido ningún ejercicio.</div>}
-            </article>
-          })}
-        </section>
-
-        <section className="session-notes">
-          <label>Trabajo específico de porteros<textarea rows="4" value={form.goalkeeper_notes} onChange={e=>set("goalkeeper_notes",e.target.value)} placeholder="Trabajo separado o adaptaciones para porteros…"/></label>
-          <label>Observaciones<textarea rows="4" value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="Material, incidencias, ajustes o recordatorios…"/></label>
-        </section>
-        {error&&<div className="error">{error}</div>}
-        <footer className="session-editor-footer">
-          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
-          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar sesión"}</button>
-        </footer>
-      </form>
-    </div>
-    {pickerPart&&<ExercisePicker part={pickerPart} selectedId={blocks[pickerPart]?.id}
-      onChoose={ex=>{setBlocks(x=>({...x,[pickerPart]:ex}));setPickerPart("")}} onClose={()=>setPickerPart("")}/>}
-  </div>
+async function ensureTrainingActivity(session){
+  if(!session?.id||!session.session_date)return;
+  const {data}=await supabase.from("activities").select("id").eq("team_id",TEAM_ID).eq("session_id",session.id).maybeSingle();
+  const payload={team_id:TEAM_ID,session_id:session.id,activity_date:session.session_date,type:"training",title:session.title||`Sesión ${session.kind||""}`,status:session.status==="completed"?"completed":"planned"};
+  if(data?.id)await supabase.from("activities").update(payload).eq("id",data.id);else await supabase.from("activities").insert(payload);
 }
 
 function printSession(session,blocks){
-  const rows=SESSION_PARTS.map(part=>{
-    const ex=blocks.find(b=>b.part===part.id)?.exercises;
-    return `<section class="block"><header><b>${part.label}</b><span>${part.time}</span></header>
-      <div class="body">${ex?.image_url?`<img src="${ex.image_url}">`:`<div class="noimg">Sin imagen</div>`}
-      <div><h3>${ex?.name||"Sin ejercicio"}</h3><p>${ex?.description||""}</p></div></div></section>`;
-  }).join("");
-  const win=window.open("","_blank");
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${session.title||"Sesión"}</title>
-  <style>@page{size:A4;margin:10mm}body{font-family:Arial;color:#17233b;margin:0}.head{border-bottom:3px solid #1676de;padding-bottom:8px;margin-bottom:10px}.head h1{margin:0}.meta{display:flex;gap:15px;margin-top:5px}.goal,.notes{border:1px solid #bbb;padding:8px;margin:8px 0}.block{border:1px solid #aaa;margin:7px 0;break-inside:avoid}.block header{background:#eef4fa;padding:6px 8px;display:flex;justify-content:space-between}.body{display:grid;grid-template-columns:34% 1fr;gap:10px;padding:8px}.body img{width:100%;height:120px;object-fit:contain}.noimg{height:120px;display:grid;place-items:center;background:#eee}.body h3{margin:0 0 5px}.body p{font-size:12px;margin:0;white-space:pre-wrap}.notes h3{margin:0 0 4px}</style></head>
-  <body><div class="head"><h1>${session.title||`Sesión ${session.kind}`}</h1><div class="meta"><span>${session.session_date}</span><span>Sesión ${session.kind}</span><span>BENJAMÍN C</span></div></div>
-  ${session.goal?`<div class="goal"><b>Objetivo:</b> ${session.goal}</div>`:""}${rows}
-  ${session.goalkeeper_notes?`<div class="notes"><h3>Porteros</h3>${session.goalkeeper_notes}</div>`:""}
-  ${session.notes?`<div class="notes"><h3>Observaciones</h3>${session.notes}</div>`:""}
-  <script>window.onload=()=>window.print()</script></body></html>`);
-  win.document.close();
+  const rows=SESSION_PARTS.map(p=>{const ex=blocks.find(b=>b.part===p.id)?.exercises;return `<section><header><b>${p.label}</b><span>${p.time}</span></header><div class="row">${ex?.image_url?`<img src="${ex.image_url}">`:""}<div><h3>${ex?.name||"Sin ejercicio"}</h3><p>${ex?.description||""}</p></div></div></section>`}).join("");
+  const w=window.open("","_blank");w.document.write(`<html><head><title>${session.title||"Sesión"}</title><style>@page{size:A4;margin:9mm}body{font:12px Arial;color:#12264c}h1{margin:0 0 3mm}section{border:1px solid #bbb;margin:3mm 0;break-inside:avoid}section header{display:flex;justify-content:space-between;background:#eef4fa;padding:2mm}.row{display:grid;grid-template-columns:35mm 1fr;gap:3mm;padding:2mm}.row img{width:35mm;height:27mm;object-fit:contain}.row h3{margin:0 0 1mm}.row p{margin:0;white-space:pre-wrap}.note{border:1px solid #bbb;padding:2mm;margin-top:3mm}</style></head><body><h1>${session.title||`Sesión ${session.kind}`}</h1><p>${fmtDate(session.session_date)} · BENJAMÍN C</p>${session.goal?`<div class="note"><b>Objetivo:</b> ${session.goal}</div>`:""}${rows}${session.goalkeeper_notes?`<div class="note"><b>Porteros:</b> ${session.goalkeeper_notes}</div>`:""}<script>window.onload=()=>window.print()</script></body></html>`);w.document.close();
 }
 
 function SessionPreview({session,onClose}){
-  const [blocks,setBlocks]=useState([]);
-  const [loading,setLoading]=useState(true);
-  useEffect(()=>{
-    supabase.from("session_blocks").select("*,exercises(*)").eq("session_id",session.id).order("sort_order")
-      .then(({data})=>{setBlocks(data||[]);setLoading(false)});
-  },[]);
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal session-preview-modal">
-      <header className="modal-head"><div><small>{session.session_date} · Sesión {session.kind}</small><h2>{session.title||"Sesión de entrenamiento"}</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button></header>
-      <div className="session-preview-scroll">
-        {session.goal&&<div className="objective-box"><b>Objetivo</b><p>{session.goal}</p></div>}
-        {loading?<div className="empty">Cargando…</div>:SESSION_PARTS.map(part=>{
-          const ex=blocks.find(b=>b.part===part.id)?.exercises;
-          return <article className="preview-block" key={part.id}><header><b>{part.label}</b><span>{part.time}</span></header>
-            {ex?<div><div className="preview-img">{ex.image_url?<img src={ex.image_url}/>:<ImageIcon/>}</div>
-              <section><h3>{ex.name}</h3><p>{ex.description||""}</p></section></div>:<p className="no-exercise">Sin ejercicio.</p>}
-          </article>
-        })}
-        {session.goalkeeper_notes&&<div className="objective-box"><b>Porteros</b><p>{session.goalkeeper_notes}</p></div>}
-        {session.notes&&<div className="objective-box"><b>Observaciones</b><p>{session.notes}</p></div>}
-      </div>
-      <footer className="picker-footer"><button className="button primary icon-text" onClick={()=>printSession(session,blocks)}><Printer size={17}/>Imprimir A4</button><button className="button secondary" onClick={onClose}>Cerrar</button></footer>
-    </div>
-  </div>
+  const [blocks,setBlocks]=useState([]);useEffect(()=>{supabase.from("session_blocks").select("*,exercises(*)").eq("session_id",session.id).order("sort_order").then(({data})=>setBlocks(data||[]))},[]);
+  return <ModalShell title={session.title||`Sesión ${session.kind}`} kicker={`${fmtDate(session.session_date)} · Sesión ${session.kind}`} onClose={onClose} className="preview-modal"><div className="preview-scroll modal-scroll">{session.goal&&<div className="note-box"><b>Objetivo</b><p>{session.goal}</p></div>}{SESSION_PARTS.map(p=>{const ex=blocks.find(b=>b.part===p.id)?.exercises;return <article className="preview-row" key={p.id}><header><b>{p.label}</b><small>{p.time}</small></header>{ex?<div>{ex.image_url?<img src={ex.image_url}/>:<ImageIcon/>}<section><h3>{ex.name}</h3><p>{ex.description||""}</p></section></div>:<p>Sin ejercicio.</p>}</article>})}</div><footer className="modal-footer"><button className="button secondary" onClick={()=>printSession(session,blocks)}><Printer/>Imprimir A4</button><button className="button ghost" onClick={onClose}>Cerrar</button></footer></ModalShell>
 }
 
-function SessionsPage({history=false,onCount}){
-  const [items,setItems]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-  const [editing,setEditing]=useState(undefined);
-  const [preview,setPreview]=useState(null);
-  const [filter,setFilter]=useState("all");
+function MesocyclesStrip({items,onEdit,onNew}){return <section className="mesos-strip"><div className="mesos-head"><b>Mesociclos</b><button onClick={onNew}>+ Añadir</button></div><div className="mesos-items">{items.map((m,i)=><button key={m.id} onClick={()=>onEdit(m)}><b>{i+1}. {m.name}</b><small>{fmtDate(m.start_date,true)} — {fmtDate(m.end_date,true)}</small><span>{m.objectives||"Sin objetivos"}</span></button>)}</div></section>}
 
-  async function load(){
-    setLoading(true);setError("");
-    const {data,error}=await supabase.from("sessions").select("*,mesocycles(name)")
-      .eq("team_id",TEAM_ID).order("session_date",{ascending:history});
-    setLoading(false);
-    if(error)return setError(error.message);
-    setItems(data||[]);onCount?.(data?.length||0);
-  }
-  useEffect(()=>{load()},[history]);
-
-  async function remove(item){
-    if(!confirm(`¿Eliminar la sesión del ${formatDate(item.session_date)}?`))return;
-    const {error}=await supabase.from("sessions").delete().eq("id",item.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  async function duplicate(item){
-    const {data:blocks}=await supabase.from("session_blocks").select("*").eq("session_id",item.id);
-    const {data:newSession,error}=await supabase.from("sessions").insert({
-      team_id:TEAM_ID,mesocycle_id:item.mesocycle_id,session_date:item.session_date,kind:item.kind,
-      title:`Copia de ${item.title||`Sesión ${item.kind}`}`,goal:item.goal,
-      goalkeeper_notes:item.goalkeeper_notes,notes:item.notes
-    }).select("id").single();
-    if(error)return alert(error.message);
-    if(blocks?.length)await supabase.from("session_blocks").insert(blocks.map(b=>({
-      session_id:newSession.id,exercise_id:b.exercise_id,part:b.part,sort_order:b.sort_order
-    })));
-    load();
-  }
-
-  const today=toISO(new Date());
-  const filtered=items.filter(s=>filter==="all"||(filter==="upcoming"?s.session_date>=today:s.session_date<today));
-
+function PlanningPage({history=false}){
+  const [sessions,setSessions]=useState([]),[mesos,setMesos]=useState([]),[editing,setEditing]=useState(undefined),[preview,setPreview]=useState(null),[mesoEdit,setMesoEdit]=useState(undefined),[attendanceSession,setAttendanceSession]=useState(null),[loading,setLoading]=useState(true);
+  async function load(){setLoading(true);const [s,m]=await Promise.all([supabase.from("sessions").select("*,mesocycles(name)").eq("team_id",TEAM_ID).order("session_date"),supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID).order("sort_order").order("start_date")]);setSessions(s.data||[]);setMesos(m.data||[]);setLoading(false);(s.data||[]).forEach(ensureTrainingActivity)}
+  useEffect(()=>{load()},[]);
+  async function complete(s){await supabase.from("sessions").update({status:"completed"}).eq("id",s.id);await ensureTrainingActivity({...s,status:"completed"});load()}
+  async function reopen(s){await supabase.from("sessions").update({status:"planned"}).eq("id",s.id);await ensureTrainingActivity({...s,status:"planned"});load()}
+  async function remove(s){if(!confirm("¿Eliminar esta sesión?"))return;await supabase.from("sessions").delete().eq("id",s.id);load()}
+  async function duplicate(s){const {data:bl}=await supabase.from("session_blocks").select("*").eq("session_id",s.id);const {data:n,error}=await supabase.from("sessions").insert({team_id:TEAM_ID,mesocycle_id:s.mesocycle_id,session_date:s.session_date,kind:s.kind,title:`${s.title||"Sesión"} · copia`,goal:s.goal,goalkeeper_notes:s.goalkeeper_notes,notes:s.notes,status:"planned"}).select("*").single();if(error)return alert(error.message);if(bl?.length)await supabase.from("session_blocks").insert(bl.map(b=>({session_id:n.id,exercise_id:b.exercise_id,part:b.part,sort_order:b.sort_order})));await ensureTrainingActivity(n);load()}
+  async function deleteMeso(m){if(!confirm(`¿Eliminar ${m.name}?`))return;await supabase.from("mesocycles").delete().eq("id",m.id);load()}
+  async function openAttendance(s){await ensureTrainingActivity(s);const {data}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).eq("session_id",s.id).maybeSingle();if(data)setAttendanceSession(data)}
+  const shown=sessions.filter(s=>history?s.status==="completed":s.status!=="completed");
+  const weeks=useMemo(()=>{const map={};shown.forEach(s=>{const mon=mondayOf(s.session_date),k=iso(mon);if(!map[k])map[k]={monday:mon,sessions:[]};map[k].sessions.push(s)});return Object.values(map).sort((a,b)=>a.monday-b.monday)},[shown]);
   return <>
-    <div className="page-title-row"><div><p className="overline">Sesiones</p><h2>{history?"Historial":"Planificador"}</h2>
-      <p className="subtext">{history?"Consulta sesiones anteriores y vuelve a imprimirlas.":"Crea y modifica sesiones con los cinco bloques de entrenamiento."}</p></div>
-      {!history&&<button className="button primary icon-text" onClick={()=>setEditing(null)}><Plus size={18}/>Nueva sesión</button>}
-    </div>
-    <section className="session-filter card-panel">
-      <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas</button>
-      <button className={filter==="upcoming"?"active":""} onClick={()=>setFilter("upcoming")}>Próximas</button>
-      <button className={filter==="past"?"active":""} onClick={()=>setFilter("past")}>Anteriores</button>
-      <button className="refresh-session" onClick={load}><RefreshCw size={17}/>Actualizar</button>
-    </section>
-    {error&&<div className="error">{error}</div>}
-    {loading?<div className="empty">Cargando sesiones…</div>:filtered.length===0?<section className="empty card-panel"><ClipboardList size={38}/><h3>No hay sesiones</h3><p>{history?"Todavía no hay sesiones anteriores.":"Crea la primera sesión de entrenamiento."}</p></section>:
-    <section className="session-list">
-      {filtered.map(item=><article className="session-row card-panel" key={item.id}>
-        <div className="session-date-box"><strong>{new Date(item.session_date+"T12:00:00").getDate()}</strong><span>{new Intl.DateTimeFormat("es-ES",{month:"short"}).format(new Date(item.session_date+"T12:00:00"))}</span></div>
-        <div className="session-row-main"><div className="session-row-title"><span className="kind-badge">Sesión {item.kind}</span><h3>{item.title||"Entrenamiento"}</h3></div>
-          <p>{item.goal||"Sin objetivo definido."}</p><small>{item.mesocycles?.name||"Sin mesociclo"}</small></div>
-        <div className="session-row-actions">
-          <button className="icon-button bordered" onClick={()=>setPreview(item)} title="Ver"><Eye size={18}/></button>
-          {!history&&<button className="icon-button bordered" onClick={()=>setEditing(item)} title="Editar"><Pencil size={18}/></button>}
-          {!history&&<button className="icon-button bordered" onClick={()=>duplicate(item)} title="Duplicar"><Copy size={18}/></button>}
-          {!history&&<button className="delete-button" onClick={()=>remove(item)} title="Eliminar"><Trash2 size={18}/></button>}
-        </div>
-      </article>)}
-    </section>}
+    <PageHead title={history?"Histórico":"Planificación"} kicker="Temporada 2026-2027" subtitle={history?"Sesiones completadas":"Planificación semanal: sesiones A y B en la misma fila"} action={!history&&<button className="button primary" onClick={()=>setEditing(null)}><Plus/>Nueva sesión</button>}/>
+    {!history&&<MesocyclesStrip items={mesos} onNew={()=>setMesoEdit(null)} onEdit={setMesoEdit}/>} 
+    {loading?<Empty text="Cargando sesiones…"/>:weeks.length===0?<Empty text={history?"No hay sesiones completadas.":"No hay sesiones planificadas."}/>:<div className="weeks-list">{weeks.map((w)=>{const base=sessions.length?mondayOf([...sessions].sort((a,b)=>a.session_date.localeCompare(b.session_date))[0].session_date):w.monday;const weekNo=Math.round((w.monday-base)/604800000)+1;return <article className="week-row" key={iso(w.monday)}><div className="week-label"><b>Sem {weekNo}</b><small>{fmtDate(iso(w.monday),true)}</small></div><div className="week-sessions">{[...w.sessions].sort((a,b)=>a.session_date.localeCompare(b.session_date)).map(s=><SessionCard key={s.id} s={s} history={history} onEdit={()=>setEditing(s)} onPreview={()=>setPreview(s)} onAttendance={()=>openAttendance(s)} onComplete={()=>complete(s)} onReopen={()=>reopen(s)} onDuplicate={()=>duplicate(s)} onDelete={()=>remove(s)}/>)}</div></article>})}</div>}
     {editing!==undefined&&<SessionEditor session={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
-    {preview&&<SessionPreview session={preview} onClose={()=>setPreview(null)}/>}
+    {preview&&<SessionPreview session={preview} onClose={()=>setPreview(null)}/>} 
+    {mesoEdit!==undefined&&<MesocycleModal item={mesoEdit} onClose={()=>setMesoEdit(undefined)} onSaved={()=>{setMesoEdit(undefined);load()}}/>}
+    {attendanceSession&&<AttendanceModal activity={attendanceSession} onClose={()=>{setAttendanceSession(null);load()}}/>}
   </>
 }
+function SessionCard({s,history,onEdit,onPreview,onAttendance,onComplete,onReopen,onDuplicate,onDelete}){return <div className={`session-card-compact ${history?"done":""}`}><div className="session-card-head"><div><b>Sesión {s.kind}</b><small>{fmtDate(s.session_date,true)}</small></div><span>{s.mesocycles?.name||""}</span></div><h3>{s.title||"Entrenamiento"}</h3><p>{s.goal||"Sin objetivo definido"}</p><div className="session-card-actions"><button onClick={onPreview}><Eye/>Ver</button>{!history&&<button onClick={onEdit}><Pencil/>Editar</button>}<button onClick={onAttendance}>Asistencia</button><button onClick={onDuplicate}><Copy/>Copiar</button>{history?<button onClick={onReopen}>Reabrir</button>:<button className="complete" onClick={onComplete}><Check/>Completar</button>}{!history&&<button className="danger-link icon-only" onClick={onDelete}><Trash2/></button>}</div></div>}
 
-
-
-function PlayerModal({player,onClose,onSaved}){
-  const [form,setForm]=useState(player||{
-    number:"",name:"",position:"",start_date:"2026-09-01",end_date:"",active:true,notes:""
-  });
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState("");
-  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
-
-  async function save(e){
-    e.preventDefault();
-    setError("");
-    if(!form.name.trim()) return setError("Escribe el nombre del jugador.");
-    if(form.end_date && form.start_date && form.end_date<form.start_date){
-      return setError("La fecha de baja no puede ser anterior a la fecha de alta.");
-    }
-    setBusy(true);
-    const payload={
-      team_id:TEAM_ID,
-      number:form.number===""?null:Number(form.number),
-      name:form.name.trim(),
-      position:form.position.trim()||null,
-      start_date:form.start_date||"2026-09-01",
-      end_date:form.end_date||null,
-      active:Boolean(form.active),
-      notes:form.notes.trim()||null,
-    };
-    const query=player?.id
-      ? supabase.from("players").update(payload).eq("id",player.id)
-      : supabase.from("players").insert(payload);
-    const {error}=await query;
-    setBusy(false);
-    if(error)return setError(error.message);
-    onSaved();
-  }
-
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal player-modal">
-      <header className="modal-head">
-        <div><small>{player?"Editar jugador":"Nuevo jugador"}</small><h2>Ficha del jugador</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <form className="exercise-form" onSubmit={save}>
-        <label>Dorsal
-          <input type="number" min="0" max="99" value={form.number??""} onChange={e=>set("number",e.target.value)} placeholder="Ej. 7"/>
-        </label>
-        <label>Posición
-          <input value={form.position||""} onChange={e=>set("position",e.target.value)} placeholder="Portero, defensa, medio…"/>
-        </label>
-        <label className="full">Nombre y apellidos
-          <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Nombre completo"/>
-        </label>
-        <label>Fecha de alta
-          <input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/>
-        </label>
-        <label>Fecha de baja
-          <input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/>
-        </label>
-        <label className="favorite-check full">
-          <input type="checkbox" checked={Boolean(form.active)} onChange={e=>set("active",e.target.checked)}/>
-          <UserCheck size={18}/> Jugador activo
-        </label>
-        <label className="full">Observaciones
-          <textarea rows="5" value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Información útil para el cuerpo técnico…"/>
-        </label>
-        {error&&<div className="error full">{error}</div>}
-        <footer className="form-footer full">
-          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
-          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar jugador"}</button>
-        </footer>
-      </form>
-    </div>
-  </div>
+async function ensureSaturdayMatches(sessions,mesos){
+  const dates=[...sessions.map(s=>s.session_date),...mesos.flatMap(m=>[m.start_date,m.end_date]).filter(Boolean)].filter(Boolean).sort();
+  if(!dates.length)return;
+  const start=new Date(dates[0]+"T12:00:00"), end=new Date("2027-06-30T12:00:00");
+  const d=new Date(start);while(d.getDay()!==6)d.setDate(d.getDate()+1);
+  const saturdays=[];for(;d<=end;d.setDate(d.getDate()+7))saturdays.push(iso(d));
+  const {data:existing}=await supabase.from("activities").select("activity_date,status").eq("team_id",TEAM_ID).eq("type","match").in("activity_date",saturdays.length?saturdays:["1900-01-01"]);
+  const have=new Set((existing||[]).map(x=>x.activity_date));const rows=saturdays.filter(x=>!have.has(x)).map(x=>({team_id:TEAM_ID,activity_date:x,type:"match",title:"Partido",status:"planned",home_away:"home"}));if(rows.length)await supabase.from("activities").insert(rows);
 }
 
-function PlayersPage({onCount}){
-  const [items,setItems]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-  const [query,setQuery]=useState("");
-  const [status,setStatus]=useState("active");
-  const [editing,setEditing]=useState(undefined);
-
-  async function load(){
-    setLoading(true);setError("");
-    const {data,error}=await supabase.from("players").select("*")
-      .eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name");
-    setLoading(false);
-    if(error)return setError(error.message);
-    setItems(data||[]);
-    onCount?.((data||[]).filter(p=>p.active).length);
-  }
+function CalendarPage(){
+  const [month,setMonth]=useState(new Date(2026,8,1)),[sessions,setSessions]=useState([]),[matches,setMatches]=useState([]),[mesos,setMesos]=useState([]),[conv,setConv]=useState(null);
+  async function load(){const [s,m]=await Promise.all([supabase.from("sessions").select("*").eq("team_id",TEAM_ID),supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID)]);setSessions(s.data||[]);setMesos(m.data||[]);await ensureSaturdayMatches(s.data||[],m.data||[]);const {data:a}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).eq("type","match").order("activity_date");setMatches(a||[])}
   useEffect(()=>{load()},[]);
-
-  async function toggleActive(player){
-    const next=!player.active;
-    const payload={active:next,end_date:next?null:(player.end_date||toISO(new Date()))};
-    const {error}=await supabase.from("players").update(payload).eq("id",player.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  async function remove(player){
-    if(!confirm(`¿Eliminar definitivamente a "${player.name}"? Para conservar el historial es preferible marcarlo como inactivo.`))return;
-    const {error}=await supabase.from("players").delete().eq("id",player.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  const filtered=useMemo(()=>items.filter(player=>{
-    const q=query.trim().toLowerCase();
-    return (!q||player.name.toLowerCase().includes(q)||(player.position||"").toLowerCase().includes(q)||String(player.number??"").includes(q))
-      &&(status==="all"||(status==="active"?player.active:!player.active));
-  }),[items,query,status]);
-
-  return <>
-    <div className="page-title-row">
-      <div><p className="overline">Equipo</p><h2>Jugadores</h2>
-        <p className="subtext">Gestiona la plantilla, altas, bajas, dorsales y estado activo.</p></div>
-      <button className="button primary icon-text" onClick={()=>setEditing(null)}><UserPlus size={18}/>Añadir jugador</button>
-    </div>
-
-    <section className="players-summary">
-      <article className="card-panel"><UserCheck size={24}/><div><strong>{items.filter(p=>p.active).length}</strong><span>Jugadores activos</span></div></article>
-      <article className="card-panel"><UserX size={24}/><div><strong>{items.filter(p=>!p.active).length}</strong><span>Jugadores inactivos</span></div></article>
-      <article className="card-panel"><Users size={24}/><div><strong>{items.length}</strong><span>Total histórico</span></div></article>
-    </section>
-
-    <section className="filters card-panel players-filters">
-      <label className="search-field"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar por nombre, dorsal o posición…"/></label>
-      <select value={status} onChange={e=>setStatus(e.target.value)}>
-        <option value="active">Solo activos</option>
-        <option value="inactive">Solo inactivos</option>
-        <option value="all">Todos</option>
-      </select>
-      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
-    </section>
-
-    {error&&<div className="error">{error}</div>}
-    {loading?<div className="empty">Cargando jugadores…</div>:filtered.length===0?
-      <section className="empty card-panel"><Users size={38}/><h3>No hay jugadores</h3><p>Añade el primer jugador de la plantilla.</p></section>:
-      <section className="players-grid">
-        {filtered.map(player=><article className={`player-card card-panel ${player.active?"":"inactive"}`} key={player.id}>
-          <div className="player-number">{player.number??"—"}</div>
-          <div className="player-info">
-            <div className="player-heading"><div><h3>{player.name}</h3><p>{player.position||"Sin posición definida"}</p></div>
-              <span className={player.active?"status-active":"status-inactive"}>{player.active?"Activo":"Inactivo"}</span>
-            </div>
-            <div className="player-dates">
-              <span><b>Alta:</b> {formatDate(player.start_date)}</span>
-              {player.end_date&&<span><b>Baja:</b> {formatDate(player.end_date)}</span>}
-            </div>
-            {player.notes&&<p className="player-notes">{player.notes}</p>}
-            <div className="player-actions">
-              <button className="button secondary icon-text" onClick={()=>setEditing(player)}><Pencil size={16}/>Editar</button>
-              <button className="button secondary icon-text" onClick={()=>toggleActive(player)}>
-                {player.active?<><UserX size={16}/>Dar de baja</>:<><UserCheck size={16}/>Reactivar</>}
-              </button>
-              <button className="delete-button" onClick={()=>remove(player)} title="Eliminar definitivamente"><Trash2 size={17}/></button>
-            </div>
-          </div>
-        </article>)}
-      </section>}
-    {editing!==undefined&&<PlayerModal player={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
-  </>
+  const cells=useMemo(()=>{const first=new Date(month.getFullYear(),month.getMonth(),1),last=new Date(month.getFullYear(),month.getMonth()+1,0),pad=(first.getDay()+6)%7,a=[];for(let i=0;i<pad;i++)a.push(null);for(let d=1;d<=last.getDate();d++)a.push(new Date(month.getFullYear(),month.getMonth(),d));while(a.length%7)a.push(null);return a},[month]);
+  async function noMatch(a){await supabase.from("activities").update({status:"cancelled"}).eq("id",a.id);load()}
+  return <><PageHead title="Calendario" kicker="Planificación" subtitle="Entrenamientos y partidos"/><section className="calendar card"><div className="calendar-nav"><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><ChevronLeft/></button><h2>{new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric"}).format(month)}</h2><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><ChevronRight/></button></div><div className="weekdays">{["L","M","X","J","V","S","D"].map(x=><b key={x}>{x}</b>)}</div><div className="calendar-grid-v6">{cells.map((d,i)=>{if(!d)return <div className="day muted" key={i}/>;const date=iso(d),ss=sessions.filter(s=>s.session_date===date),mm=matches.filter(a=>a.activity_date===date&&a.status!=="cancelled");return <div className="day" key={date}><span>{d.getDate()}</span>{ss.map(s=><div className={`cal-item training ${s.status==="completed"?"done":""}`} key={s.id}>Entr. {s.kind}</div>)}{mm.map(a=><div className="cal-match" key={a.id}><button onClick={()=>setConv(a)}>⚽ Partido</button><button className="x" title="Sin partido" onClick={()=>noMatch(a)}>×</button></div>)}</div>})}</div></section>{conv&&<AttendanceModal activity={conv} mode="match" onClose={()=>{setConv(null);load()}}/>}</>
 }
 
+function PlayerModal({player,onClose,onSaved}){const [form,setForm]=useState(player||{number:"",name:"",position:"",start_date:"2026-09-01",end_date:"",active:true,notes:""});const [error,setError]=useState("");const set=(k,v)=>setForm(x=>({...x,[k]:v}));async function save(e){e.preventDefault();if(!form.name.trim())return setError("Escribe el nombre.");const payload={team_id:TEAM_ID,number:form.number===""?null:Number(form.number),name:form.name.trim(),position:form.position||null,start_date:form.start_date||"2026-09-01",end_date:form.end_date||null,active:!!form.active,notes:form.notes||null};const q=player?.id?supabase.from("players").update(payload).eq("id",player.id):supabase.from("players").insert(payload);const {error}=await q;if(error)return setError(error.message);onSaved()}return <ModalShell title="Jugador" kicker={player?"Editar":"Nuevo"} onClose={onClose}><form className="form-grid modal-scroll" onSubmit={save}><label>Dorsal<input type="number" value={form.number??""} onChange={e=>set("number",e.target.value)}/></label><label>Posición<input value={form.position||""} onChange={e=>set("position",e.target.value)}/></label><label className="full">Nombre<input value={form.name} onChange={e=>set("name",e.target.value)}/></label><label>Alta<input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/></label><label>Baja<input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/></label><label className="check full"><input type="checkbox" checked={!!form.active} onChange={e=>set("active",e.target.checked)}/>Activo</label><label className="full">Observaciones<textarea rows="4" value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></label>{error&&<div className="error full">{error}</div>}<footer className="modal-footer full"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary">Guardar</button></footer></form></ModalShell>}
+function PlayersPage(){const [items,setItems]=useState([]),[q,setQ]=useState(""),[editing,setEditing]=useState(undefined);async function load(){const {data}=await supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name");setItems(data||[])}useEffect(()=>{load()},[]);const filtered=items.filter(p=>!q||p.name.toLowerCase().includes(q.toLowerCase())||String(p.number??"").includes(q));async function toggle(p){await supabase.from("players").update({active:!p.active,end_date:p.active?(p.end_date||iso(new Date())):null}).eq("id",p.id);load()}return <><PageHead title="Jugadores" kicker="Equipo" subtitle={`${items.filter(p=>p.active).length} jugadores activos`} action={<button className="button primary" onClick={()=>setEditing(null)}><UserPlus/>Añadir</button>}/><div className="table-toolbar"><label><Search/><input placeholder="Buscar jugador…" value={q} onChange={e=>setQ(e.target.value)}/></label></div><div className="players-table card"><table><thead><tr><th>Nº</th><th>Jugador</th><th>Posición</th><th>Estado</th><th>Alta</th><th></th></tr></thead><tbody>{filtered.map(p=><tr key={p.id} className={!p.active?"inactive":""}><td className="number">{p.number??"—"}</td><td><b>{p.name}</b></td><td>{p.position||"—"}</td><td><span className={`status ${p.active?"active":"off"}`}>{p.active?"Activo":"Inactivo"}</span></td><td>{fmtDate(p.start_date,true)}</td><td className="table-actions"><button onClick={()=>setEditing(p)}>Editar</button><button onClick={()=>toggle(p)}>{p.active?"Baja":"Reactivar"}</button></td></tr>)}</tbody></table></div><div className="player-footstats"><span>Activos <b>{items.filter(p=>p.active).length}</b></span><span>Inactivos <b>{items.filter(p=>!p.active).length}</b></span><span>Histórico <b>{items.length}</b></span></div>{editing!==undefined&&<PlayerModal player={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}</>}
 
+function AttendanceModal({activity,onClose,mode}){const [players,setPlayers]=useState([]),[records,setRecords]=useState({}),[saving,setSaving]=useState(false);const isMatch=(mode||activity.type)==="match";useEffect(()=>{Promise.all([supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}),supabase.from("attendance").select("*").eq("activity_id",activity.id)]).then(([p,a])=>{const eligible=(p.data||[]).filter(x=>(!x.start_date||activity.activity_date>=x.start_date)&&(!x.end_date||activity.activity_date<=x.end_date));setPlayers(eligible);const saved=Object.fromEntries((a.data||[]).map(r=>[r.player_id,r.status]));const def=isMatch?"called_up":"present";setRecords(Object.fromEntries(eligible.map(x=>[x.id,saved[x.id]||def])))})},[]);async function save(){setSaving(true);await supabase.from("attendance").delete().eq("activity_id",activity.id);const rows=players.map(p=>({activity_id:activity.id,player_id:p.id,status:records[p.id]}));if(rows.length)await supabase.from("attendance").insert(rows);if(activity.status!=="completed")await supabase.from("activities").update({status:"completed"}).eq("id",activity.id);setSaving(false);onClose()}return <ModalShell title={isMatch?"Convocatoria":"Asistencia"} kicker={`${fmtDate(activity.activity_date)} · ${activity.title}`} onClose={onClose} className="attendance-modal"><div className="attendance-note">Todos aparecen <b>{isMatch?"convocados":"presentes"}</b> por defecto. Cambia solo las excepciones.</div><div className="attendance-list modal-scroll">{players.map(p=><div className="att-row" key={p.id}><span><b>{p.number??"—"}</b>{p.name}</span><div>{isMatch?<><button className={records[p.id]==="called_up"?"sel green":""} onClick={()=>setRecords(x=>({...x,[p.id]:"called_up"}))}>Convocado</button><button className={records[p.id]==="not_called_up"?"sel red":""} onClick={()=>setRecords(x=>({...x,[p.id]:"not_called_up"}))}>No convocado</button><button className={records[p.id]==="unavailable"?"sel amber":""} onClick={()=>setRecords(x=>({...x,[p.id]:"unavailable"}))}>No puede asistir</button></>:<><button className={records[p.id]==="present"?"sel green":""} onClick={()=>setRecords(x=>({...x,[p.id]:"present"}))}>Asiste</button><button className={records[p.id]==="absent"?"sel red":""} onClick={()=>setRecords(x=>({...x,[p.id]:"absent"}))}>No asiste</button></>}</div></div>)}</div><footer className="modal-footer"><button className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" onClick={save} disabled={saving}><Save/>{saving?"Guardando…":"Guardar"}</button></footer></ModalShell>}
 
-const TRAINING_STATUSES = [
-  {id:"present",label:"Asiste",className:"present"},
-  {id:"absent",label:"No asiste",className:"absent"},
-];
-const MATCH_STATUSES = [
-  {id:"called_up",label:"Convocado",className:"called"},
-  {id:"not_called_up",label:"No convocado",className:"not-called"},
-  {id:"unavailable",label:"No puede asistir",className:"unavailable"},
-];
+async function syncActivities(){const {data:sessions}=await supabase.from("sessions").select("*").eq("team_id",TEAM_ID);for(const s of sessions||[])await ensureTrainingActivity(s);return sessions||[]}
+function AttendancePage({matchesOnly=false}){const [activities,setActivities]=useState([]),[selected,setSelected]=useState(null),[loading,setLoading]=useState(true);async function load(){setLoading(true);const sessions=await syncActivities();const {data:mesos}=await supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID);await ensureSaturdayMatches(sessions,mesos||[]);const {data}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).order("activity_date",{ascending:false});setActivities((data||[]).filter(a=>a.status!=="cancelled"&&(matchesOnly?a.type==="match":true)));setLoading(false)}useEffect(()=>{load()},[matchesOnly]);return <><PageHead title={matchesOnly?"Convocatorias":"Asistencia"} kicker="Equipo" subtitle={matchesOnly?"Partidos programados":"Sesiones y partidos creados automáticamente"}/>{loading?<Empty text="Cargando…"/>:<div className="activity-table card"><table><thead><tr><th>Fecha</th><th>Actividad</th><th>Estado</th><th></th></tr></thead><tbody>{activities.map(a=><tr key={a.id}><td>{fmtDate(a.activity_date,true)}</td><td><b>{a.type==="match"?"⚽":"○"} {a.title}</b></td><td><span className={`status ${a.status==="completed"?"active":"planned"}`}>{a.status==="completed"?"Registrada":"Pendiente"}</span></td><td className="table-actions"><button className="button small primary" onClick={()=>setSelected(a)}>{a.type==="match"?"Convocatoria":"Asistencia"}</button></td></tr>)}</tbody></table></div>}{selected&&<AttendanceModal activity={selected} onClose={()=>{setSelected(null);load()}}/>}</>}
 
-function ActivityModal({activity,onClose,onSaved}){
-  const [form,setForm]=useState(activity||{
-    activity_date:"",activity_time:"",type:"training",title:"",opponent:"",
-    home_away:"home",status:"planned",session_id:""
-  });
-  const [sessions,setSessions]=useState([]);
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState("");
-  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+function AnalyticsPage(){const [players,setPlayers]=useState([]),[activities,setActivities]=useState([]),[attendance,setAttendance]=useState([]),[exercises,setExercises]=useState([]),[blocks,setBlocks]=useState([]);useEffect(()=>{Promise.all([supabase.from("players").select("*").eq("team_id",TEAM_ID),supabase.from("activities").select("*").eq("team_id",TEAM_ID),supabase.from("attendance").select("*,activities!inner(team_id)").eq("activities.team_id",TEAM_ID),supabase.from("exercises").select("*").eq("team_id",TEAM_ID),supabase.from("session_blocks").select("exercise_id,sessions!inner(team_id)").eq("sessions.team_id",TEAM_ID)]).then(([p,a,r,e,b])=>{setPlayers(p.data||[]);setActivities(a.data||[]);setAttendance(r.data||[]);setExercises(e.data||[]);setBlocks(b.data||[])})},[]);const completed=activities.filter(a=>a.status==="completed"),tr=completed.filter(a=>a.type==="training"),mt=completed.filter(a=>a.type==="match");const rec=(pid,aid)=>attendance.find(r=>r.player_id===pid&&r.activity_id===aid)?.status;const stats=players.map(p=>{const ta=tr.filter(a=>rec(p.id,a.id)),ma=mt.filter(a=>rec(p.id,a.id));const present=ta.filter(a=>rec(p.id,a.id)==="present").length,called=ma.filter(a=>rec(p.id,a.id)==="called_up").length;return{p,present,tt:ta.length,tp:ta.length?Math.round(present/ta.length*100):null,called,mt:ma.length,mp:ma.length?Math.round(called/ma.length*100):null,not:ma.filter(a=>rec(p.id,a.id)==="not_called_up").length,un:ma.filter(a=>rec(p.id,a.id)==="unavailable").length}});const usage=Object.values(blocks.reduce((o,b)=>{const e=exercises.find(x=>x.id===b.exercise_id);if(e){o[e.id]=o[e.id]||{e,count:0};o[e.id].count++}return o},{})).sort((a,b)=>b.count-a.count);return <><PageHead title="Análisis" kicker="Resumen" subtitle="Asistencia, convocatorias y uso de ejercicios"/><div className="analytics-top"><Kpi label="Entrenamientos" value={tr.length}/><Kpi label="Partidos" value={mt.length}/><Kpi label="Jugadores" value={players.filter(p=>p.active).length}/><Kpi label="Ejercicios usados" value={blocks.length}/></div><div className="analytics-two"><div className="card analysis-card"><h3>Ranking de ejercicios</h3>{usage.slice(0,10).map((x,i)=><div className="rank" key={x.e.id}><span>{i+1}</span><div><b>{x.e.name}</b><small>{x.e.type||""}</small></div><strong>{x.count}</strong></div>)}</div><div className="card analysis-card"><h3>Jugadores</h3><div className="mini-table"><table><thead><tr><th>Jugador</th><th>Entr.</th><th>Partidos</th></tr></thead><tbody>{stats.map(x=><tr key={x.p.id}><td>{x.p.number??"—"} · {x.p.name}</td><td>{x.tp==null?"—":`${x.tp}%`}</td><td>{x.mp==null?"—":`${x.mp}%`}</td></tr>)}</tbody></table></div></div></div></>}
+function Kpi({label,value}){return <div className="kpi"><strong>{value}</strong><span>{label}</span></div>}
 
-  useEffect(()=>{
-    supabase.from("sessions").select("id,session_date,kind,title")
-      .eq("team_id",TEAM_ID).order("session_date")
-      .then(({data})=>setSessions(data||[]));
-  },[]);
-
-  async function save(e){
-    e.preventDefault();
-    setError("");
-    if(!form.activity_date)return setError("Selecciona una fecha.");
-    if(!form.title.trim()){
-      set("title",form.type==="training"?"Entrenamiento":"Partido");
-    }
-    setBusy(true);
-    const payload={
-      team_id:TEAM_ID,
-      session_id:form.type==="training"&&form.session_id?form.session_id:null,
-      activity_date:form.activity_date,
-      activity_time:form.activity_time||null,
-      type:form.type,
-      title:form.title.trim()||(form.type==="training"?"Entrenamiento":"Partido"),
-      opponent:form.type==="match"?(form.opponent.trim()||null):null,
-      home_away:form.type==="match"?form.home_away:null,
-      status:form.status,
-    };
-    const query=activity?.id
-      ? supabase.from("activities").update(payload).eq("id",activity.id)
-      : supabase.from("activities").insert(payload);
-    const {error}=await query;
-    setBusy(false);
-    if(error)return setError(error.message);
-    onSaved();
-  }
-
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal activity-modal">
-      <header className="modal-head">
-        <div><small>{activity?"Editar actividad":"Nueva actividad"}</small><h2>{form.type==="training"?"Entrenamiento":"Partido"}</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <form className="exercise-form" onSubmit={save}>
-        <label>Tipo
-          <select value={form.type} onChange={e=>set("type",e.target.value)}>
-            <option value="training">Entrenamiento</option>
-            <option value="match">Partido</option>
-          </select>
-        </label>
-        <label>Estado
-          <select value={form.status} onChange={e=>set("status",e.target.value)}>
-            <option value="planned">Programada</option>
-            <option value="completed">Realizada</option>
-            <option value="cancelled">Cancelada</option>
-            <option value="postponed">Aplazada</option>
-          </select>
-        </label>
-        <label>Fecha
-          <input type="date" value={form.activity_date} onChange={e=>set("activity_date",e.target.value)}/>
-        </label>
-        <label>Hora
-          <input type="time" value={form.activity_time||""} onChange={e=>set("activity_time",e.target.value)}/>
-        </label>
-        <label className="full">Título
-          <input value={form.title||""} onChange={e=>set("title",e.target.value)}
-            placeholder={form.type==="training"?"Entrenamiento":"Partido de liga"}/>
-        </label>
-
-        {form.type==="training"?<>
-          <label className="full">Sesión vinculada
-            <select value={form.session_id||""} onChange={e=>set("session_id",e.target.value)}>
-              <option value="">Sin vincular</option>
-              {sessions.map(s=><option value={s.id} key={s.id}>
-                {formatDate(s.session_date)} · Sesión {s.kind}{s.title?` · ${s.title}`:""}
-              </option>)}
-            </select>
-          </label>
-        </>:<>
-          <label>Rival
-            <input value={form.opponent||""} onChange={e=>set("opponent",e.target.value)} placeholder="Nombre del rival"/>
-          </label>
-          <label>Local / visitante
-            <select value={form.home_away||"home"} onChange={e=>set("home_away",e.target.value)}>
-              <option value="home">Local</option>
-              <option value="away">Visitante</option>
-            </select>
-          </label>
-        </>}
-
-        {error&&<div className="error full">{error}</div>}
-        <footer className="form-footer full">
-          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
-          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar actividad"}</button>
-        </footer>
-      </form>
-    </div>
-  </div>
-}
-
-function AttendanceModal({activity,onClose}){
-  const [players,setPlayers]=useState([]);
-  const [records,setRecords]=useState({});
-  const [loading,setLoading]=useState(true);
-  const [saving,setSaving]=useState(false);
-  const [message,setMessage]=useState("");
-
-  useEffect(()=>{
-    Promise.all([
-      supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name"),
-      supabase.from("attendance").select("*").eq("activity_id",activity.id)
-    ]).then(([p,a])=>{
-      const eligible=(p.data||[]).filter(player=>{
-        const afterStart=!player.start_date||activity.activity_date>=player.start_date;
-        const beforeEnd=!player.end_date||activity.activity_date<=player.end_date;
-        return afterStart&&beforeEnd;
-      });
-      setPlayers(eligible);
-      setRecords(Object.fromEntries((a.data||[]).map(r=>[r.player_id,r.status])));
-      setLoading(false);
-    });
-  },[]);
-
-  function options(){
-    return activity.type==="training"?TRAINING_STATUSES:MATCH_STATUSES;
-  }
-
-  function setStatus(playerId,status){
-    setRecords(x=>({...x,[playerId]:x[playerId]===status?null:status}));
-  }
-
-  async function markAll(status){
-    setRecords(Object.fromEntries(players.map(p=>[p.id,status])));
-  }
-
-  async function save(){
-    setSaving(true);setMessage("");
-    const rows=players.filter(p=>records[p.id]).map(p=>({
-      activity_id:activity.id,player_id:p.id,status:records[p.id]
-    }));
-    const {error:deleteError}=await supabase.from("attendance").delete().eq("activity_id",activity.id);
-    if(deleteError){setSaving(false);return setMessage(deleteError.message)}
-    if(rows.length){
-      const {error}=await supabase.from("attendance").insert(rows);
-      if(error){setSaving(false);return setMessage(error.message)}
-    }
-    setSaving(false);setMessage("Asistencia guardada.");
-  }
-
-  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal attendance-modal">
-      <header className="modal-head">
-        <div><small>{formatDate(activity.activity_date)} · {activity.type==="training"?"Entrenamiento":"Partido"}</small><h2>{activity.title}</h2></div>
-        <button className="icon-button" onClick={onClose}><X/></button>
-      </header>
-      <div className="attendance-toolbar">
-        <span>{players.length} jugadores computables</span>
-        {activity.type==="training"
-          ?<button className="button secondary" onClick={()=>markAll("present")}>Marcar todos: Asiste</button>
-          :<button className="button secondary" onClick={()=>markAll("called_up")}>Marcar todos: Convocado</button>}
-      </div>
-      <div className="attendance-scroll">
-        {loading?<div className="empty">Cargando plantilla…</div>:players.map(player=><article className="attendance-player" key={player.id}>
-          <div className="attendance-player-id"><strong>{player.number??"—"}</strong><span>{player.name}</span></div>
-          <div className="attendance-buttons">
-            {options().map(opt=><button key={opt.id} className={`${opt.className} ${records[player.id]===opt.id?"active":""}`}
-              onClick={()=>setStatus(player.id,opt.id)}>{opt.label}</button>)}
-          </div>
-        </article>)}
-      </div>
-      {message&&<div className={message.includes("guardada")?"success-message":"error"}>{message}</div>}
-      <footer className="picker-footer">
-        <button className="button secondary" onClick={onClose}>Cerrar</button>
-        <button className="button primary icon-text" onClick={save} disabled={saving}><Save size={17}/>{saving?"Guardando…":"Guardar asistencia"}</button>
-      </footer>
-    </div>
-  </div>
-}
-
-function AttendanceSummary({players,activities,attendance}){
-  const completed=activities.filter(a=>a.status==="completed");
-  const trainings=completed.filter(a=>a.type==="training");
-  const matches=completed.filter(a=>a.type==="match");
-
-  function eligible(player,activity){
-    return (!player.start_date||activity.activity_date>=player.start_date)
-      &&(!player.end_date||activity.activity_date<=player.end_date);
-  }
-  function record(playerId,activityId){
-    return attendance.find(r=>r.player_id===playerId&&r.activity_id===activityId)?.status||null;
-  }
-
-  const rows=players.map(player=>{
-    const pt=trainings.filter(a=>eligible(player,a)&&record(player.id,a.id));
-    const trainPresent=pt.filter(a=>record(player.id,a.id)==="present").length;
-    const pm=matches.filter(a=>eligible(player,a)&&record(player.id,a.id));
-    const called=pm.filter(a=>record(player.id,a.id)==="called_up").length;
-    const notCalled=pm.filter(a=>record(player.id,a.id)==="not_called_up").length;
-    const unavailable=pm.filter(a=>record(player.id,a.id)==="unavailable").length;
-    return {
-      player,
-      trainPresent,trainTotal:pt.length,trainPct:pt.length?Math.round(trainPresent/pt.length*100):null,
-      called,matchTotal:pm.length,matchPct:pm.length?Math.round(called/pm.length*100):null,
-      notCalled,unavailable
-    };
-  });
-
-  return <section className="summary-table card-panel">
-    <div className="summary-table-head">
-      <h3>Resumen por jugador</h3>
-      <p>Solo cuentan actividades realizadas y con un estado registrado.</p>
-    </div>
-    <div className="summary-table-scroll">
-      <table>
-        <thead><tr><th>Jugador</th><th>Entrenamientos</th><th>% entrenamientos</th><th>Convocado</th><th>% partidos</th><th>No convocado</th><th>No puede asistir</th></tr></thead>
-        <tbody>{rows.map(r=><tr key={r.player.id}>
-          <td><b>{r.player.number??"—"}</b> {r.player.name}</td>
-          <td>{r.trainPresent}/{r.trainTotal}</td>
-          <td>{r.trainPct===null?"—":`${r.trainPct}%`}</td>
-          <td>{r.called}/{r.matchTotal}</td>
-          <td>{r.matchPct===null?"—":`${r.matchPct}%`}</td>
-          <td>{r.notCalled}</td>
-          <td>{r.unavailable}</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-  </section>
-}
-
-function AttendancePage({matchesOnly=false}){
-  const [activities,setActivities]=useState([]);
-  const [players,setPlayers]=useState([]);
-  const [attendance,setAttendance]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-  const [editing,setEditing]=useState(undefined);
-  const [registering,setRegistering]=useState(null);
-  const [filter,setFilter]=useState(matchesOnly?"match":"all");
-
-  async function load(){
-    setLoading(true);setError("");
-    const [a,p,r]=await Promise.all([
-      supabase.from("activities").select("*").eq("team_id",TEAM_ID).order("activity_date",{ascending:false}),
-      supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name"),
-      supabase.from("attendance").select("*,activities!inner(team_id)").eq("activities.team_id",TEAM_ID)
-    ]);
-    setLoading(false);
-    const firstError=a.error||p.error||r.error;
-    if(firstError)return setError(firstError.message);
-    setActivities(a.data||[]);setPlayers(p.data||[]);setAttendance(r.data||[]);
-  }
-  useEffect(()=>{load()},[matchesOnly]);
-
-  async function remove(activity){
-    if(!confirm(`¿Eliminar "${activity.title}"? También se eliminarán sus registros de asistencia.`))return;
-    const {error}=await supabase.from("activities").delete().eq("id",activity.id);
-    if(error)return alert(error.message);
-    load();
-  }
-
-  const visible=activities.filter(a=>{
-    if(matchesOnly)return a.type==="match";
-    return filter==="all"||a.type===filter;
-  });
-
-  function statusLabel(status){
-    return {planned:"Programada",completed:"Realizada",cancelled:"Cancelada",postponed:"Aplazada"}[status]||status;
-  }
-
-  return <>
-    <div className="page-title-row">
-      <div><p className="overline">Equipo</p><h2>{matchesOnly?"Convocatorias":"Asistencia"}</h2>
-        <p className="subtext">{matchesOnly?"Control de convocados, no convocados y jugadores que no pueden asistir.":"Control de entrenamientos y partidos con porcentajes por jugador."}</p></div>
-      <button className="button primary icon-text" onClick={()=>setEditing(null)}><CalendarPlus size={18}/>Nueva actividad</button>
-    </div>
-
-    {!matchesOnly&&<section className="attendance-kpis">
-      <article className="card-panel"><Dumbbell/><div><strong>{activities.filter(a=>a.type==="training"&&a.status==="completed").length}</strong><span>Entrenamientos realizados</span></div></article>
-      <article className="card-panel"><Trophy/><div><strong>{activities.filter(a=>a.type==="match"&&a.status==="completed").length}</strong><span>Partidos realizados</span></div></article>
-      <article className="card-panel"><Percent/><div><strong>{players.filter(p=>p.active).length}</strong><span>Jugadores activos</span></div></article>
-    </section>}
-
-    {!matchesOnly&&<section className="session-filter card-panel">
-      <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas</button>
-      <button className={filter==="training"?"active":""} onClick={()=>setFilter("training")}>Entrenamientos</button>
-      <button className={filter==="match"?"active":""} onClick={()=>setFilter("match")}>Partidos</button>
-      <button className="refresh-session" onClick={load}><RefreshCw size={17}/>Actualizar</button>
-    </section>}
-
-    {error&&<div className="error">{error}</div>}
-    {loading?<div className="empty">Cargando actividades…</div>:visible.length===0?
-      <section className="empty card-panel"><CalendarDays size={38}/><h3>No hay actividades</h3><p>Añade entrenamientos o partidos cuando conozcas las fechas.</p></section>:
-      <section className="activity-list">
-        {visible.map(activity=>{
-          const registered=attendance.filter(r=>r.activity_id===activity.id).length;
-          return <article className="activity-row card-panel" key={activity.id}>
-            <div className={`activity-icon ${activity.type}`}><span>{activity.type==="training"?<Dumbbell/>:<Trophy/>}</span></div>
-            <div className="activity-main">
-              <div className="activity-title"><h3>{activity.title}</h3><span className={`activity-status ${activity.status}`}>{statusLabel(activity.status)}</span></div>
-              <p>{formatDate(activity.activity_date)}{activity.activity_time?` · ${activity.activity_time.slice(0,5)}`:""}{activity.opponent?` · Rival: ${activity.opponent}`:""}</p>
-              <small>{registered} registros completados</small>
-            </div>
-            <div className="activity-actions">
-              <button className="button primary" onClick={()=>setRegistering(activity)}>Registrar</button>
-              <button className="icon-button bordered" onClick={()=>setEditing(activity)}><Pencil size={17}/></button>
-              <button className="delete-button" onClick={()=>remove(activity)}><Trash2 size={17}/></button>
-            </div>
-          </article>
-        })}
-      </section>}
-
-    {!matchesOnly&&players.length>0&&<AttendanceSummary players={players} activities={activities} attendance={attendance}/>}
-
-    {editing!==undefined&&<ActivityModal activity={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
-    {registering&&<AttendanceModal activity={registering} onClose={()=>{setRegistering(null);load()}}/>}
-  </>
-}
-
-
-
-function AnalyticsPage(){
-  const [players,setPlayers]=useState([]);
-  const [activities,setActivities]=useState([]);
-  const [attendance,setAttendance]=useState([]);
-  const [exercises,setExercises]=useState([]);
-  const [blocks,setBlocks]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
-
-  async function load(){
-    setLoading(true);setError("");
-    const [p,a,r,e,b]=await Promise.all([
-      supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name"),
-      supabase.from("activities").select("*").eq("team_id",TEAM_ID),
-      supabase.from("attendance").select("*,activities!inner(team_id)").eq("activities.team_id",TEAM_ID),
-      supabase.from("exercises").select("*").eq("team_id",TEAM_ID),
-      supabase.from("session_blocks").select("exercise_id,part,sessions!inner(team_id)").eq("sessions.team_id",TEAM_ID)
-    ]);
-    setLoading(false);
-    const firstError=p.error||a.error||r.error||e.error||b.error;
-    if(firstError)return setError(firstError.message);
-    setPlayers(p.data||[]);setActivities(a.data||[]);setAttendance(r.data||[]);
-    setExercises(e.data||[]);setBlocks(b.data||[]);
-  }
-  useEffect(()=>{load()},[]);
-
-  if(loading)return <div className="empty">Cargando estadísticas…</div>;
-  if(error)return <div className="error">{error}</div>;
-
-  const completed=activities.filter(a=>a.status==="completed");
-  const trainings=completed.filter(a=>a.type==="training");
-  const matches=completed.filter(a=>a.type==="match");
-
-  function eligible(player,activity){
-    return (!player.start_date||activity.activity_date>=player.start_date)
-      &&(!player.end_date||activity.activity_date<=player.end_date);
-  }
-  function record(playerId,activityId){
-    return attendance.find(r=>r.player_id===playerId&&r.activity_id===activityId)?.status||null;
-  }
-
-  const playerStats=players.map(player=>{
-    const tr=trainings.filter(a=>eligible(player,a)&&record(player.id,a.id));
-    const mt=matches.filter(a=>eligible(player,a)&&record(player.id,a.id));
-    const present=tr.filter(a=>record(player.id,a.id)==="present").length;
-    const called=mt.filter(a=>record(player.id,a.id)==="called_up").length;
-    return {
-      player,
-      present,trainTotal:tr.length,trainPct:tr.length?Math.round(present/tr.length*100):null,
-      called,matchTotal:mt.length,matchPct:mt.length?Math.round(called/mt.length*100):null,
-      notCalled:mt.filter(a=>record(player.id,a.id)==="not_called_up").length,
-      unavailable:mt.filter(a=>record(player.id,a.id)==="unavailable").length,
-    };
-  });
-
-  const activeStats=playerStats.filter(x=>x.player.active);
-  const avgTrain=activeStats.filter(x=>x.trainPct!==null);
-  const avgMatch=activeStats.filter(x=>x.matchPct!==null);
-  const avgTrainPct=avgTrain.length?Math.round(avgTrain.reduce((s,x)=>s+x.trainPct,0)/avgTrain.length):0;
-  const avgMatchPct=avgMatch.length?Math.round(avgMatch.reduce((s,x)=>s+x.matchPct,0)/avgMatch.length):0;
-
-  const usage=Object.values(blocks.reduce((acc,b)=>{
-    const ex=exercises.find(e=>e.id===b.exercise_id);
-    if(!ex)return acc;
-    if(!acc[ex.id])acc[ex.id]={exercise:ex,count:0};
-    acc[ex.id].count++;
-    return acc;
-  },{})).sort((a,b)=>b.count-a.count);
-
-  const byTypeMap={};
-  blocks.forEach(b=>{
-    const ex=exercises.find(e=>e.id===b.exercise_id);
-    const key=ex?.type||"Sin tipología";
-    byTypeMap[key]=(byTypeMap[key]||0)+1;
-  });
-  const byType=Object.entries(byTypeMap).sort((a,b)=>b[1]-a[1]);
-  const maxUsage=Math.max(1,...usage.map(x=>x.count));
-  const maxType=Math.max(1,...byType.map(x=>x[1]));
-
-  return <>
-    <div className="page-title-row">
-      <div><p className="overline">Estadísticas</p><h2>Análisis general</h2>
-        <p className="subtext">Resumen sencillo de asistencia, convocatorias y uso de ejercicios.</p></div>
-      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
-    </div>
-
-    <section className="analytics-kpis">
-      <article className="card-panel"><Dumbbell/><div><strong>{avgTrainPct}%</strong><span>Asistencia media a entrenamientos</span></div></article>
-      <article className="card-panel"><Trophy/><div><strong>{avgMatchPct}%</strong><span>Convocatoria media en partidos</span></div></article>
-      <article className="card-panel"><ClipboardList/><div><strong>{blocks.length}</strong><span>Ejercicios usados en sesiones</span></div></article>
-      <article className="card-panel"><BookOpen/><div><strong>{exercises.length}</strong><span>Ejercicios en biblioteca</span></div></article>
-    </section>
-
-    <section className="analytics-grid">
-      <article className="card-panel analytics-card">
-        <header><div><small>Equipo</small><h3>Asistencia a entrenamientos</h3></div><Percent/></header>
-        <div className="ranking-list">
-          {[...playerStats].sort((a,b)=>(b.trainPct??-1)-(a.trainPct??-1)).map(row=><div className="ranking-row" key={row.player.id}>
-            <span className="ranking-name"><b>{row.player.number??"—"}</b>{row.player.name}</span>
-            <div className="progress-track"><i style={{width:`${row.trainPct||0}%`}}/></div>
-            <strong>{row.trainPct===null?"—":`${row.trainPct}%`}</strong>
-          </div>)}
-        </div>
-      </article>
-
-      <article className="card-panel analytics-card">
-        <header><div><small>Equipo</small><h3>Convocatorias de partido</h3></div><Trophy/></header>
-        <div className="ranking-list">
-          {[...playerStats].sort((a,b)=>(b.matchPct??-1)-(a.matchPct??-1)).map(row=><div className="ranking-row" key={row.player.id}>
-            <span className="ranking-name"><b>{row.player.number??"—"}</b>{row.player.name}</span>
-            <div className="progress-track match"><i style={{width:`${row.matchPct||0}%`}}/></div>
-            <strong>{row.matchPct===null?"—":`${row.matchPct}%`}</strong>
-          </div>)}
-        </div>
-      </article>
-    </section>
-
-    <section className="analytics-grid">
-      <article className="card-panel analytics-card">
-        <header><div><small>Biblioteca</small><h3>Ranking de ejercicios</h3></div><Award/></header>
-        {usage.length===0?<p className="analytics-empty">Todavía no hay ejercicios utilizados en sesiones.</p>:
-        <div className="usage-list">{usage.slice(0,12).map((row,index)=><div className="usage-row" key={row.exercise.id}>
-          <span className="usage-position">{index+1}</span>
-          <div className="usage-main"><b>{row.exercise.name}</b><small>{row.exercise.type||"Sin tipología"} · {DIFF_LABEL[row.exercise.difficulty]||row.exercise.difficulty}</small>
-            <div className="usage-track"><i style={{width:`${row.count/maxUsage*100}%`}}/></div></div>
-          <strong>{row.count}</strong>
-        </div>)}</div>}
-      </article>
-
-      <article className="card-panel analytics-card">
-        <header><div><small>Sesiones</small><h3>Uso por tipología</h3></div><BarChart3/></header>
-        {byType.length===0?<p className="analytics-empty">Todavía no hay datos de tipologías.</p>:
-        <div className="type-list">{byType.map(([type,count])=><div className="type-row" key={type}>
-          <div><b>{type}</b><span>{count} usos</span></div>
-          <div className="type-bar"><i style={{width:`${count/maxType*100}%`}}/></div>
-        </div>)}</div>}
-      </article>
-    </section>
-
-    <section className="summary-table card-panel">
-      <div className="summary-table-head"><h3>Detalle por jugador</h3><p>Los porcentajes solo incluyen actividades realizadas y registradas.</p></div>
-      <div className="summary-table-scroll"><table>
-        <thead><tr><th>Jugador</th><th>Entrenamientos</th><th>% entrenamientos</th><th>Convocado</th><th>% partidos</th><th>No convocado</th><th>No puede asistir</th></tr></thead>
-        <tbody>{playerStats.map(r=><tr key={r.player.id}>
-          <td><b>{r.player.number??"—"}</b> {r.player.name}</td>
-          <td>{r.present}/{r.trainTotal}</td><td>{r.trainPct===null?"—":`${r.trainPct}%`}</td>
-          <td>{r.called}/{r.matchTotal}</td><td>{r.matchPct===null?"—":`${r.matchPct}%`}</td>
-          <td>{r.notCalled}</td><td>{r.unavailable}</td>
-        </tr>)}</tbody>
-      </table></div>
-    </section>
-  </>
-}
-
-
-function Placeholder({title,text}){
-  return <section className="placeholder card-panel"><h2>{title}</h2><p>{text}</p></section>
-}
-
-function Dashboard({counts,setActive}){
-  const stats=[
-    {label:"Ejercicios",value:counts.exercises,color:"blue",icon:BookOpen},
-    {label:"Mesociclos",value:counts.mesocycles||0,color:"green",icon:CalendarDays},
-    {label:"Sesiones",value:counts.sessions||0,color:"purple",icon:ClipboardList},
-    {label:"Jugadores",value:counts.players||0,color:"orange",icon:Users},
-  ];
-  const quick=[
-    {label:"Nueva sesión",note:"Crear una nueva sesión",icon:Plus,target:"planificador",color:"blue"},
-    {label:"Ver calendario",note:"Ver entrenamientos y partidos",icon:CalendarDays,target:"calendario",color:"green"},
-    {label:"Buscar ejercicios",note:"Buscar en la biblioteca",icon:Search,target:"biblioteca",color:"purple"},
-    {label:"Gestionar jugadores",note:"Ver y editar jugadores",icon:Users,target:"jugadores",color:"orange"},
-  ];
-  return <>
-    <section className="hero card-panel">
-      <div><p>Planificador de entrenamientos Fútbol 7</p><h2>Temporada 2026-2027</h2></div>
-      <strong>BENJAMÍN C</strong>
-    </section>
-    <section className="stats-grid">{stats.map(({label,value,color,icon:Icon})=><article className="stat-card" key={label}>
-      <div><strong className={color}>{value}</strong><span>{label}</span></div><i className={color}><Icon size={28}/></i>
-    </article>)}</section>
-    <section className="quick-panel card-panel"><h3>Accesos rápidos</h3><div className="quick-grid">
-      {quick.map(({label,note,icon:Icon,target,color})=><button key={label} onClick={()=>setActive(target)}>
-        <i className={color}><Icon size={25}/></i><span><b>{label}</b><small>{note}</small></span>
-      </button>)}
-    </div></section>
-  </>
-}
+function Dashboard({setActive}){const [data,setData]=useState({ex:0,se:0,done:0,me:0,pl:0,next:null,match:null,avg:0});useEffect(()=>{(async()=>{const [e,s,m,p,a,r]=await Promise.all([supabase.from("exercises").select("*",{count:"exact",head:true}).eq("team_id",TEAM_ID),supabase.from("sessions").select("*").eq("team_id",TEAM_ID).order("session_date"),supabase.from("mesocycles").select("*",{count:"exact",head:true}).eq("team_id",TEAM_ID),supabase.from("players").select("*").eq("team_id",TEAM_ID).eq("active",true),supabase.from("activities").select("*").eq("team_id",TEAM_ID).order("activity_date"),supabase.from("attendance").select("*,activities!inner(team_id,type,status)").eq("activities.team_id",TEAM_ID).eq("activities.type","training").eq("activities.status","completed")]);const today=iso(new Date()),sessions=s.data||[],acts=a.data||[],next=sessions.find(x=>x.session_date>=today&&x.status!=="completed"),match=acts.find(x=>x.type==="match"&&x.status!=="cancelled"&&x.activity_date>=today);const rows=r.data||[],avg=rows.length?Math.round(rows.filter(x=>x.status==="present").length/rows.length*100):0;setData({ex:e.count||0,se:sessions.length,done:sessions.filter(x=>x.status==="completed").length,me:m.count||0,pl:(p.data||[]).length,next,match,avg})})()},[]);return <><PageHead title="Inicio" kicker="BENJAMÍN C · 2026-2027"/><div className="dashboard-grid"><section className="next-card card"><small>Próximo entrenamiento</small><h2>{data.next?fmtDate(data.next.session_date,true):"Sin programar"}</h2><p>{data.next?.title||"Crea la siguiente sesión desde Planificación"}</p><button onClick={()=>setActive("planificacion")}>Abrir planificación →</button></section><section className="next-card card"><small>Próximo partido</small><h2>{data.match?fmtDate(data.match.activity_date,true):"Sin programar"}</h2><p>{data.match?.opponent?`vs ${data.match.opponent}`:"Partido de temporada"}</p><button onClick={()=>setActive("calendario")}>Abrir calendario →</button></section></div><div className="dashboard-kpis"><Kpi label="Ejercicios" value={data.ex}/><Kpi label="Sesiones" value={data.se}/><Kpi label="Completadas" value={data.done}/><Kpi label="Mesociclos" value={data.me}/><Kpi label="Jugadores" value={data.pl}/><Kpi label="Asistencia media" value={`${data.avg}%`}/></div></>}
 
 function Sidebar({active,setActive,open,setOpen}){
   return <aside className={open?"open":""}>
-    <div className="brand"><img src="/logo-club.png" alt="Logo"/><div><small>Colegios Diocesanos</small><strong>BENJAMÍN C</strong></div></div>
-    <nav>
-      {MENU.map((item,index)=>{
-        if(item.group){
-          const Icon=item.icon;
-          return <div className="nav-group" key={item.group}>
-            <div className="nav-group-title"><Icon size={19}/><b>{item.group}</b></div>
-            {item.children.map(child=><button key={child.id} className={active===child.id?"child active": "child"} onClick={()=>{setActive(child.id);setOpen(false)}}>{child.label}</button>)}
-          </div>
-        }
-        const Icon=item.icon;
-        return <button key={item.id} className={active===item.id?"top active":"top"} onClick={()=>{setActive(item.id);setOpen(false)}}><Icon size={19}/>{item.label}</button>
-      })}
-    </nav>
-    <div className="team-select">BENJAMÍN C <ChevronDown size={16}/></div>
+    <div className="brand"><img src="/logo-club.png" alt="Logo del club"/><div><small>Colegios Diocesanos</small><strong>BENJAMÍN C</strong></div></div>
+    <nav>{MENU.map(item=>item.group
+      ? <div className="nav-group" key={item.group}><div className="nav-title"><item.icon size={16}/><b>{item.group}</b></div>{item.children.map(c=><button className={active===c.id?"active":""} key={c.id} onClick={()=>{setActive(c.id);setOpen(false)}}>{c.label}</button>)}</div>
+      : <button className={`root ${active===item.id?"active":""}`} key={item.id} onClick={()=>{setActive(item.id);setOpen(false)}}><item.icon size={17}/>{item.label}</button>
+    )}</nav>
+    <div className="app-identity" aria-label={`${APP_NAME}, versión ${APP_VERSION}, desarrollado por ${APP_DEVELOPER}`}>
+      <div>{APP_NAME}</div>
+      <div>v{APP_VERSION}</div>
+      <div>Desarrollado por<br/><strong>{APP_DEVELOPER}</strong></div>
+    </div>
   </aside>
 }
 
-function App(){
-  const [active,setActive]=useState("inicio");
-  const [open,setOpen]=useState(false);
-  const [counts,setCounts]=useState({exercises:0,mesocycles:0,sessions:0,players:0});
-  const labels={
-    inicio:"Inicio",mesociclos:"Mesociclos",calendario:"Calendario",planificador:"Planificador",
-    historial:"Historial",biblioteca:"Ejercicios",favoritos:"Favoritos",jugadores:"Jugadores",
-    asistencia:"Asistencia",convocatorias:"Convocatorias",estadisticas:"Estadísticas",configuracion:"Configuración"
-  };
-
-  return <div className="app">
-    <Sidebar active={active} setActive={setActive} open={open} setOpen={setOpen}/>
-    <div className="workspace">
-      <header className="topbar"><button className="menu-button" onClick={()=>setOpen(!open)}><Menu/></button>
-        <div><small>Programación</small><h1>{labels[active]||"Inicio"}</h1></div><span>BENJAMÍN C <ChevronDown size={16}/></span>
-      </header>
-      <main>
-        {active==="inicio"&&<Dashboard counts={counts} setActive={setActive}/>}
-        {active==="biblioteca"&&<Library onCount={n=>setCounts(c=>({...c,exercises:n}))}/>} 
-        {active==="favoritos"&&<Library favoritesOnly onCount={n=>setCounts({exercises:n})}/>}
-        {active==="mesociclos"&&<Mesocycles onCount={n=>setCounts(c=>({...c,mesocycles:n}))}/>} 
-        {active==="calendario"&&<SeasonCalendar/>} 
-        {active==="planificador"&&<SessionsPage onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
-        {active==="historial"&&<SessionsPage history onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
-        {active==="jugadores"&&<PlayersPage onCount={n=>setCounts(c=>({...c,players:n}))}/>} 
-        {active==="asistencia"&&<AttendancePage/>} 
-        {active==="convocatorias"&&<AttendancePage matchesOnly/>} 
-        {active==="estadisticas"&&<AnalyticsPage/>} 
-        {active==="configuracion"&&<Placeholder title="Configuración" text="Datos generales del equipo."/>}
-      </main>
-    </div>
-    {open&&<button className="scrim" onClick={()=>setOpen(false)}/>}
-  </div>
-}
+function App(){const [active,setActive]=useState("inicio"),[open,setOpen]=useState(false);if(!configured)return <div className="fatal">Faltan las variables de Supabase.</div>;return <div className="app"><Sidebar active={active} setActive={setActive} open={open} setOpen={setOpen}/><div className="workspace"><header className="topbar"><button className="menu-btn" onClick={()=>setOpen(!open)}><Menu/></button><span>Programación entrenamientos · BENJAMÍN C</span></header><main>{active==="inicio"&&<Dashboard setActive={setActive}/>} {active==="planificacion"&&<PlanningPage/>} {active==="historico"&&<PlanningPage history/>} {active==="calendario"&&<CalendarPage/>} {active==="biblioteca"&&<Library/>} {active==="favoritos"&&<Library favorites/>} {active==="jugadores"&&<PlayersPage/>} {active==="asistencia"&&<AttendancePage/>} {active==="convocatorias"&&<AttendancePage matchesOnly/>} {active==="estadisticas"&&<AnalyticsPage/>}</main></div>{open&&<button className="scrim" onClick={()=>setOpen(false)}/>}</div>}
 createRoot(document.getElementById("root")).render(<App/>);

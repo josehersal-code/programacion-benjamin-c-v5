@@ -1,40 +1,38 @@
-# Programación Benjamín C · Versión 5.7 · Fase 6
+# Programación Benjamín C · Versión 6.0 · Rediseño UX
 
-## Incluido
+Rediseño centrado en uso diario rápido y compacto.
 
-- Todo lo de la versión 5.6.
-- Pantalla de Estadísticas.
-- Asistencia media del equipo.
-- Porcentaje medio de convocatorias.
-- Ranking de asistencia por jugador.
-- Ranking de convocatorias por jugador.
-- Ranking de ejercicios utilizados.
-- Uso de ejercicios por tipología.
-- Tabla detallada por jugador.
+## Cambios principales
 
-## Importar jugadores del Excel
+- Barra lateral más estrecha y navegación compacta.
+- Cabecera superior reducida y deja de ser fija.
+- Inicio convertido en panel útil con datos reales de Supabase.
+- Planificación y mesociclos agrupados.
+- Vista semanal ascendente con sesiones A/B en una misma fila.
+- Botón Completar: mueve automáticamente la sesión al Histórico.
+- Calendario sin mesociclos: solo entrenamientos y partidos.
+- Partidos automáticos todos los sábados; se pueden marcar como "sin partido".
+- Convocatoria directamente desde el partido.
+- Jugadores en tabla compacta.
+- Asistencia sin "Nueva actividad": deriva de sesiones y partidos existentes.
+- Todos los jugadores aparecen presentes/convocados por defecto.
+- Convocatorias con Convocado / No convocado / No puede asistir.
+- Biblioteca más visual, compacta, con imágenes mayores y duplicado rápido.
+- Editor de sesiones compacto; permite intercambiar ejercicios arrastrando entre bloques.
+- Vista previa e impresión A4.
+- Análisis compacto.
 
-Ejecuta una sola vez:
+## Antes de publicar
 
-`supabase/importar_jugadores_excel.sql`
+Ejecuta una vez en Supabase:
 
-Jugadores incluidos:
-1 Guillermo Martin
-13 Leo Sanchez
-3 David
-4 Pablo Peral
-5 Fernando
-6 Guille Zazo
-7 Lucas Encabo
-8 Jose Herrera
-9 Alonso
-10 Pablo Vallejo
-11 Manuel
-12 Alejandro Nieves
-14 Miguel Sanchez
+`supabase/version6_ux.sql`
 
-## Publicación
+Después sube todos los archivos al repositorio de GitHub y haz commit:
 
-Sube el proyecto a GitHub y haz commit:
+`Versión 6.0 rediseño UX`
 
-`Versión 5.7 estadísticas y jugadores del Excel`
+
+## Identidad de la aplicación
+
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.0 · Desarrollado por José A. Herrera.

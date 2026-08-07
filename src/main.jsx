@@ -4,7 +4,7 @@ import {
   BookOpen, CalendarDays, ChevronDown, ClipboardList, History, Home,
   Image as ImageIcon, LayoutDashboard, Menu, Pencil, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Star, Trash2, TrendingUp, UserRound,
-  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check, UserPlus, UserCheck, UserX, CircleCheck, CircleX, Ban, Trophy, Dumbbell, Percent
+  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check, UserPlus, UserCheck, UserX, CircleCheck, CircleX, Ban, Trophy, Dumbbell, Percent, BarChart3, Award
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
@@ -1265,6 +1265,162 @@ function AttendancePage({matchesOnly=false}){
 }
 
 
+
+function AnalyticsPage(){
+  const [players,setPlayers]=useState([]);
+  const [activities,setActivities]=useState([]);
+  const [attendance,setAttendance]=useState([]);
+  const [exercises,setExercises]=useState([]);
+  const [blocks,setBlocks]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+
+  async function load(){
+    setLoading(true);setError("");
+    const [p,a,r,e,b]=await Promise.all([
+      supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name"),
+      supabase.from("activities").select("*").eq("team_id",TEAM_ID),
+      supabase.from("attendance").select("*,activities!inner(team_id)").eq("activities.team_id",TEAM_ID),
+      supabase.from("exercises").select("*").eq("team_id",TEAM_ID),
+      supabase.from("session_blocks").select("exercise_id,part,sessions!inner(team_id)").eq("sessions.team_id",TEAM_ID)
+    ]);
+    setLoading(false);
+    const firstError=p.error||a.error||r.error||e.error||b.error;
+    if(firstError)return setError(firstError.message);
+    setPlayers(p.data||[]);setActivities(a.data||[]);setAttendance(r.data||[]);
+    setExercises(e.data||[]);setBlocks(b.data||[]);
+  }
+  useEffect(()=>{load()},[]);
+
+  if(loading)return <div className="empty">Cargando estadísticas…</div>;
+  if(error)return <div className="error">{error}</div>;
+
+  const completed=activities.filter(a=>a.status==="completed");
+  const trainings=completed.filter(a=>a.type==="training");
+  const matches=completed.filter(a=>a.type==="match");
+
+  function eligible(player,activity){
+    return (!player.start_date||activity.activity_date>=player.start_date)
+      &&(!player.end_date||activity.activity_date<=player.end_date);
+  }
+  function record(playerId,activityId){
+    return attendance.find(r=>r.player_id===playerId&&r.activity_id===activityId)?.status||null;
+  }
+
+  const playerStats=players.map(player=>{
+    const tr=trainings.filter(a=>eligible(player,a)&&record(player.id,a.id));
+    const mt=matches.filter(a=>eligible(player,a)&&record(player.id,a.id));
+    const present=tr.filter(a=>record(player.id,a.id)==="present").length;
+    const called=mt.filter(a=>record(player.id,a.id)==="called_up").length;
+    return {
+      player,
+      present,trainTotal:tr.length,trainPct:tr.length?Math.round(present/tr.length*100):null,
+      called,matchTotal:mt.length,matchPct:mt.length?Math.round(called/mt.length*100):null,
+      notCalled:mt.filter(a=>record(player.id,a.id)==="not_called_up").length,
+      unavailable:mt.filter(a=>record(player.id,a.id)==="unavailable").length,
+    };
+  });
+
+  const activeStats=playerStats.filter(x=>x.player.active);
+  const avgTrain=activeStats.filter(x=>x.trainPct!==null);
+  const avgMatch=activeStats.filter(x=>x.matchPct!==null);
+  const avgTrainPct=avgTrain.length?Math.round(avgTrain.reduce((s,x)=>s+x.trainPct,0)/avgTrain.length):0;
+  const avgMatchPct=avgMatch.length?Math.round(avgMatch.reduce((s,x)=>s+x.matchPct,0)/avgMatch.length):0;
+
+  const usage=Object.values(blocks.reduce((acc,b)=>{
+    const ex=exercises.find(e=>e.id===b.exercise_id);
+    if(!ex)return acc;
+    if(!acc[ex.id])acc[ex.id]={exercise:ex,count:0};
+    acc[ex.id].count++;
+    return acc;
+  },{})).sort((a,b)=>b.count-a.count);
+
+  const byTypeMap={};
+  blocks.forEach(b=>{
+    const ex=exercises.find(e=>e.id===b.exercise_id);
+    const key=ex?.type||"Sin tipología";
+    byTypeMap[key]=(byTypeMap[key]||0)+1;
+  });
+  const byType=Object.entries(byTypeMap).sort((a,b)=>b[1]-a[1]);
+  const maxUsage=Math.max(1,...usage.map(x=>x.count));
+  const maxType=Math.max(1,...byType.map(x=>x[1]));
+
+  return <>
+    <div className="page-title-row">
+      <div><p className="overline">Estadísticas</p><h2>Análisis general</h2>
+        <p className="subtext">Resumen sencillo de asistencia, convocatorias y uso de ejercicios.</p></div>
+      <button className="button secondary icon-text" onClick={load}><RefreshCw size={17}/>Actualizar</button>
+    </div>
+
+    <section className="analytics-kpis">
+      <article className="card-panel"><Dumbbell/><div><strong>{avgTrainPct}%</strong><span>Asistencia media a entrenamientos</span></div></article>
+      <article className="card-panel"><Trophy/><div><strong>{avgMatchPct}%</strong><span>Convocatoria media en partidos</span></div></article>
+      <article className="card-panel"><ClipboardList/><div><strong>{blocks.length}</strong><span>Ejercicios usados en sesiones</span></div></article>
+      <article className="card-panel"><BookOpen/><div><strong>{exercises.length}</strong><span>Ejercicios en biblioteca</span></div></article>
+    </section>
+
+    <section className="analytics-grid">
+      <article className="card-panel analytics-card">
+        <header><div><small>Equipo</small><h3>Asistencia a entrenamientos</h3></div><Percent/></header>
+        <div className="ranking-list">
+          {[...playerStats].sort((a,b)=>(b.trainPct??-1)-(a.trainPct??-1)).map(row=><div className="ranking-row" key={row.player.id}>
+            <span className="ranking-name"><b>{row.player.number??"—"}</b>{row.player.name}</span>
+            <div className="progress-track"><i style={{width:`${row.trainPct||0}%`}}/></div>
+            <strong>{row.trainPct===null?"—":`${row.trainPct}%`}</strong>
+          </div>)}
+        </div>
+      </article>
+
+      <article className="card-panel analytics-card">
+        <header><div><small>Equipo</small><h3>Convocatorias de partido</h3></div><Trophy/></header>
+        <div className="ranking-list">
+          {[...playerStats].sort((a,b)=>(b.matchPct??-1)-(a.matchPct??-1)).map(row=><div className="ranking-row" key={row.player.id}>
+            <span className="ranking-name"><b>{row.player.number??"—"}</b>{row.player.name}</span>
+            <div className="progress-track match"><i style={{width:`${row.matchPct||0}%`}}/></div>
+            <strong>{row.matchPct===null?"—":`${row.matchPct}%`}</strong>
+          </div>)}
+        </div>
+      </article>
+    </section>
+
+    <section className="analytics-grid">
+      <article className="card-panel analytics-card">
+        <header><div><small>Biblioteca</small><h3>Ranking de ejercicios</h3></div><Award/></header>
+        {usage.length===0?<p className="analytics-empty">Todavía no hay ejercicios utilizados en sesiones.</p>:
+        <div className="usage-list">{usage.slice(0,12).map((row,index)=><div className="usage-row" key={row.exercise.id}>
+          <span className="usage-position">{index+1}</span>
+          <div className="usage-main"><b>{row.exercise.name}</b><small>{row.exercise.type||"Sin tipología"} · {DIFF_LABEL[row.exercise.difficulty]||row.exercise.difficulty}</small>
+            <div className="usage-track"><i style={{width:`${row.count/maxUsage*100}%`}}/></div></div>
+          <strong>{row.count}</strong>
+        </div>)}</div>}
+      </article>
+
+      <article className="card-panel analytics-card">
+        <header><div><small>Sesiones</small><h3>Uso por tipología</h3></div><BarChart3/></header>
+        {byType.length===0?<p className="analytics-empty">Todavía no hay datos de tipologías.</p>:
+        <div className="type-list">{byType.map(([type,count])=><div className="type-row" key={type}>
+          <div><b>{type}</b><span>{count} usos</span></div>
+          <div className="type-bar"><i style={{width:`${count/maxType*100}%`}}/></div>
+        </div>)}</div>}
+      </article>
+    </section>
+
+    <section className="summary-table card-panel">
+      <div className="summary-table-head"><h3>Detalle por jugador</h3><p>Los porcentajes solo incluyen actividades realizadas y registradas.</p></div>
+      <div className="summary-table-scroll"><table>
+        <thead><tr><th>Jugador</th><th>Entrenamientos</th><th>% entrenamientos</th><th>Convocado</th><th>% partidos</th><th>No convocado</th><th>No puede asistir</th></tr></thead>
+        <tbody>{playerStats.map(r=><tr key={r.player.id}>
+          <td><b>{r.player.number??"—"}</b> {r.player.name}</td>
+          <td>{r.present}/{r.trainTotal}</td><td>{r.trainPct===null?"—":`${r.trainPct}%`}</td>
+          <td>{r.called}/{r.matchTotal}</td><td>{r.matchPct===null?"—":`${r.matchPct}%`}</td>
+          <td>{r.notCalled}</td><td>{r.unavailable}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>
+  </>
+}
+
+
 function Placeholder({title,text}){
   return <section className="placeholder card-panel"><h2>{title}</h2><p>{text}</p></section>
 }
@@ -1345,7 +1501,7 @@ function App(){
         {active==="jugadores"&&<PlayersPage onCount={n=>setCounts(c=>({...c,players:n}))}/>} 
         {active==="asistencia"&&<AttendancePage/>} 
         {active==="convocatorias"&&<AttendancePage matchesOnly/>} 
-        {active==="estadisticas"&&<Placeholder title="Estadísticas" text="Se desarrollará en la fase 6."/>}
+        {active==="estadisticas"&&<AnalyticsPage/>} 
         {active==="configuracion"&&<Placeholder title="Configuración" text="Datos generales del equipo."/>}
       </main>
     </div>

@@ -1,37 +1,40 @@
-# Programación Benjamín C · Versión 5.6 · Fase 5
+# Programación Benjamín C · Versión 5.7 · Fase 6
 
 ## Incluido
 
-- Todo lo de la versión 5.5.
-- Actividades flexibles:
-  - entrenamiento;
-  - partido;
-  - fecha y hora;
-  - programada, realizada, cancelada o aplazada.
-- Entrenamientos:
-  - Asiste;
-  - No asiste;
-  - Sin registrar.
-- Partidos:
-  - Convocado;
-  - No convocado;
-  - No puede asistir;
-  - Sin registrar.
-- Porcentajes:
-  - entrenamientos asistidos respecto a entrenamientos realizados y registrados;
-  - partidos convocado respecto al total de partidos realizados y registrados.
-- Los partidos sin fecha no existen y no afectan a los porcentajes.
-- Las actividades canceladas, aplazadas o futuras no cuentan.
-- Las fechas anteriores al alta o posteriores a la baja del jugador no cuentan.
-- Resumen por jugador.
-- Pestaña específica de convocatorias.
+- Todo lo de la versión 5.6.
+- Pantalla de Estadísticas.
+- Asistencia media del equipo.
+- Porcentaje medio de convocatorias.
+- Ranking de asistencia por jugador.
+- Ranking de convocatorias por jugador.
+- Ranking de ejercicios utilizados.
+- Uso de ejercicios por tipología.
+- Tabla detallada por jugador.
 
-## Antes de publicar
+## Importar jugadores del Excel
 
 Ejecuta una sola vez:
 
-`supabase/fase5_asistencia.sql`
+`supabase/importar_jugadores_excel.sql`
 
-Después sube el proyecto a GitHub y haz commit:
+Jugadores incluidos:
+1 Guillermo Martin
+13 Leo Sanchez
+3 David
+4 Pablo Peral
+5 Fernando
+6 Guille Zazo
+7 Lucas Encabo
+8 Jose Herrera
+9 Alonso
+10 Pablo Vallejo
+11 Manuel
+12 Alejandro Nieves
+14 Miguel Sanchez
 
-`Versión 5.6 asistencia y convocatorias`
+## Publicación
+
+Sube el proyecto a GitHub y haz commit:
+
+`Versión 5.7 estadísticas y jugadores del Excel`

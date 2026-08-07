@@ -1,21 +1,22 @@
-# Programación Benjamín C · Versión 5.1 · Fase 1
+# Programación Benjamín C · Versión 5.2
 
-## Incluido
+## Cambios incluidos
 
-- Rediseño de navegación.
-- Inicio sin el texto “Aplicación sencilla para un único equipo”.
-- Panel de accesos rápidos.
-- Biblioteca de ejercicios conectada a Supabase.
-- Crear, editar y eliminar ejercicios.
-- Buscar y filtrar.
-- Imágenes ampliables.
-- Favoritos.
+- Ventana de creación y edición más ancha.
+- Altura máxima adaptada a la pantalla.
+- Desplazamiento interno dentro del formulario.
+- Botones Cancelar y Guardar siempre visibles.
+- Mejor visualización en portátil y móvil.
+- Biblioteca, filtros, favoritos e imágenes ampliables.
+- Mantiene la conexión y los datos de Supabase.
+- Compatible con los 15 ejercicios ya cargados desde el PDF FAV.
 
-## Antes de publicar
+## Publicación
 
-Ejecuta en Supabase:
+1. Descomprime el ZIP.
+2. Sube todo el contenido al repositorio `programacion-benjamin-c-v5`.
+3. Haz commit con el mensaje:
+   `Versión 5.2 editor de ejercicios`
+4. Netlify desplegará automáticamente.
 
-`supabase/fase1_favoritos.sql`
-
-Después sube todos los archivos del proyecto a GitHub y haz commit.
-Netlify desplegará automáticamente.
+No hace falta ejecutar ningún SQL adicional.

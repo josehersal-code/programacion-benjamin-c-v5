@@ -4,7 +4,7 @@ import {
   BookOpen, CalendarDays, ChevronDown, ClipboardList, History, Home,
   Image as ImageIcon, LayoutDashboard, Menu, Pencil, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Star, Trash2, TrendingUp, UserRound,
-  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check, UserPlus, UserCheck, UserX
+  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check, UserPlus, UserCheck, UserX, CircleCheck, CircleX, Ban, Trophy, Dumbbell, Percent
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
@@ -928,6 +928,343 @@ function PlayersPage({onCount}){
 }
 
 
+
+const TRAINING_STATUSES = [
+  {id:"present",label:"Asiste",className:"present"},
+  {id:"absent",label:"No asiste",className:"absent"},
+];
+const MATCH_STATUSES = [
+  {id:"called_up",label:"Convocado",className:"called"},
+  {id:"not_called_up",label:"No convocado",className:"not-called"},
+  {id:"unavailable",label:"No puede asistir",className:"unavailable"},
+];
+
+function ActivityModal({activity,onClose,onSaved}){
+  const [form,setForm]=useState(activity||{
+    activity_date:"",activity_time:"",type:"training",title:"",opponent:"",
+    home_away:"home",status:"planned",session_id:""
+  });
+  const [sessions,setSessions]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+
+  useEffect(()=>{
+    supabase.from("sessions").select("id,session_date,kind,title")
+      .eq("team_id",TEAM_ID).order("session_date")
+      .then(({data})=>setSessions(data||[]));
+  },[]);
+
+  async function save(e){
+    e.preventDefault();
+    setError("");
+    if(!form.activity_date)return setError("Selecciona una fecha.");
+    if(!form.title.trim()){
+      set("title",form.type==="training"?"Entrenamiento":"Partido");
+    }
+    setBusy(true);
+    const payload={
+      team_id:TEAM_ID,
+      session_id:form.type==="training"&&form.session_id?form.session_id:null,
+      activity_date:form.activity_date,
+      activity_time:form.activity_time||null,
+      type:form.type,
+      title:form.title.trim()||(form.type==="training"?"Entrenamiento":"Partido"),
+      opponent:form.type==="match"?(form.opponent.trim()||null):null,
+      home_away:form.type==="match"?form.home_away:null,
+      status:form.status,
+    };
+    const query=activity?.id
+      ? supabase.from("activities").update(payload).eq("id",activity.id)
+      : supabase.from("activities").insert(payload);
+    const {error}=await query;
+    setBusy(false);
+    if(error)return setError(error.message);
+    onSaved();
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal activity-modal">
+      <header className="modal-head">
+        <div><small>{activity?"Editar actividad":"Nueva actividad"}</small><h2>{form.type==="training"?"Entrenamiento":"Partido"}</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button>
+      </header>
+      <form className="exercise-form" onSubmit={save}>
+        <label>Tipo
+          <select value={form.type} onChange={e=>set("type",e.target.value)}>
+            <option value="training">Entrenamiento</option>
+            <option value="match">Partido</option>
+          </select>
+        </label>
+        <label>Estado
+          <select value={form.status} onChange={e=>set("status",e.target.value)}>
+            <option value="planned">Programada</option>
+            <option value="completed">Realizada</option>
+            <option value="cancelled">Cancelada</option>
+            <option value="postponed">Aplazada</option>
+          </select>
+        </label>
+        <label>Fecha
+          <input type="date" value={form.activity_date} onChange={e=>set("activity_date",e.target.value)}/>
+        </label>
+        <label>Hora
+          <input type="time" value={form.activity_time||""} onChange={e=>set("activity_time",e.target.value)}/>
+        </label>
+        <label className="full">Título
+          <input value={form.title||""} onChange={e=>set("title",e.target.value)}
+            placeholder={form.type==="training"?"Entrenamiento":"Partido de liga"}/>
+        </label>
+
+        {form.type==="training"?<>
+          <label className="full">Sesión vinculada
+            <select value={form.session_id||""} onChange={e=>set("session_id",e.target.value)}>
+              <option value="">Sin vincular</option>
+              {sessions.map(s=><option value={s.id} key={s.id}>
+                {formatDate(s.session_date)} · Sesión {s.kind}{s.title?` · ${s.title}`:""}
+              </option>)}
+            </select>
+          </label>
+        </>:<>
+          <label>Rival
+            <input value={form.opponent||""} onChange={e=>set("opponent",e.target.value)} placeholder="Nombre del rival"/>
+          </label>
+          <label>Local / visitante
+            <select value={form.home_away||"home"} onChange={e=>set("home_away",e.target.value)}>
+              <option value="home">Local</option>
+              <option value="away">Visitante</option>
+            </select>
+          </label>
+        </>}
+
+        {error&&<div className="error full">{error}</div>}
+        <footer className="form-footer full">
+          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
+          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar actividad"}</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+}
+
+function AttendanceModal({activity,onClose}){
+  const [players,setPlayers]=useState([]);
+  const [records,setRecords]=useState({});
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState("");
+
+  useEffect(()=>{
+    Promise.all([
+      supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name"),
+      supabase.from("attendance").select("*").eq("activity_id",activity.id)
+    ]).then(([p,a])=>{
+      const eligible=(p.data||[]).filter(player=>{
+        const afterStart=!player.start_date||activity.activity_date>=player.start_date;
+        const beforeEnd=!player.end_date||activity.activity_date<=player.end_date;
+        return afterStart&&beforeEnd;
+      });
+      setPlayers(eligible);
+      setRecords(Object.fromEntries((a.data||[]).map(r=>[r.player_id,r.status])));
+      setLoading(false);
+    });
+  },[]);
+
+  function options(){
+    return activity.type==="training"?TRAINING_STATUSES:MATCH_STATUSES;
+  }
+
+  function setStatus(playerId,status){
+    setRecords(x=>({...x,[playerId]:x[playerId]===status?null:status}));
+  }
+
+  async function markAll(status){
+    setRecords(Object.fromEntries(players.map(p=>[p.id,status])));
+  }
+
+  async function save(){
+    setSaving(true);setMessage("");
+    const rows=players.filter(p=>records[p.id]).map(p=>({
+      activity_id:activity.id,player_id:p.id,status:records[p.id]
+    }));
+    const {error:deleteError}=await supabase.from("attendance").delete().eq("activity_id",activity.id);
+    if(deleteError){setSaving(false);return setMessage(deleteError.message)}
+    if(rows.length){
+      const {error}=await supabase.from("attendance").insert(rows);
+      if(error){setSaving(false);return setMessage(error.message)}
+    }
+    setSaving(false);setMessage("Asistencia guardada.");
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal attendance-modal">
+      <header className="modal-head">
+        <div><small>{formatDate(activity.activity_date)} · {activity.type==="training"?"Entrenamiento":"Partido"}</small><h2>{activity.title}</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button>
+      </header>
+      <div className="attendance-toolbar">
+        <span>{players.length} jugadores computables</span>
+        {activity.type==="training"
+          ?<button className="button secondary" onClick={()=>markAll("present")}>Marcar todos: Asiste</button>
+          :<button className="button secondary" onClick={()=>markAll("called_up")}>Marcar todos: Convocado</button>}
+      </div>
+      <div className="attendance-scroll">
+        {loading?<div className="empty">Cargando plantilla…</div>:players.map(player=><article className="attendance-player" key={player.id}>
+          <div className="attendance-player-id"><strong>{player.number??"—"}</strong><span>{player.name}</span></div>
+          <div className="attendance-buttons">
+            {options().map(opt=><button key={opt.id} className={`${opt.className} ${records[player.id]===opt.id?"active":""}`}
+              onClick={()=>setStatus(player.id,opt.id)}>{opt.label}</button>)}
+          </div>
+        </article>)}
+      </div>
+      {message&&<div className={message.includes("guardada")?"success-message":"error"}>{message}</div>}
+      <footer className="picker-footer">
+        <button className="button secondary" onClick={onClose}>Cerrar</button>
+        <button className="button primary icon-text" onClick={save} disabled={saving}><Save size={17}/>{saving?"Guardando…":"Guardar asistencia"}</button>
+      </footer>
+    </div>
+  </div>
+}
+
+function AttendanceSummary({players,activities,attendance}){
+  const completed=activities.filter(a=>a.status==="completed");
+  const trainings=completed.filter(a=>a.type==="training");
+  const matches=completed.filter(a=>a.type==="match");
+
+  function eligible(player,activity){
+    return (!player.start_date||activity.activity_date>=player.start_date)
+      &&(!player.end_date||activity.activity_date<=player.end_date);
+  }
+  function record(playerId,activityId){
+    return attendance.find(r=>r.player_id===playerId&&r.activity_id===activityId)?.status||null;
+  }
+
+  const rows=players.map(player=>{
+    const pt=trainings.filter(a=>eligible(player,a)&&record(player.id,a.id));
+    const trainPresent=pt.filter(a=>record(player.id,a.id)==="present").length;
+    const pm=matches.filter(a=>eligible(player,a)&&record(player.id,a.id));
+    const called=pm.filter(a=>record(player.id,a.id)==="called_up").length;
+    const notCalled=pm.filter(a=>record(player.id,a.id)==="not_called_up").length;
+    const unavailable=pm.filter(a=>record(player.id,a.id)==="unavailable").length;
+    return {
+      player,
+      trainPresent,trainTotal:pt.length,trainPct:pt.length?Math.round(trainPresent/pt.length*100):null,
+      called,matchTotal:pm.length,matchPct:pm.length?Math.round(called/pm.length*100):null,
+      notCalled,unavailable
+    };
+  });
+
+  return <section className="summary-table card-panel">
+    <div className="summary-table-head">
+      <h3>Resumen por jugador</h3>
+      <p>Solo cuentan actividades realizadas y con un estado registrado.</p>
+    </div>
+    <div className="summary-table-scroll">
+      <table>
+        <thead><tr><th>Jugador</th><th>Entrenamientos</th><th>% entrenamientos</th><th>Convocado</th><th>% partidos</th><th>No convocado</th><th>No puede asistir</th></tr></thead>
+        <tbody>{rows.map(r=><tr key={r.player.id}>
+          <td><b>{r.player.number??"—"}</b> {r.player.name}</td>
+          <td>{r.trainPresent}/{r.trainTotal}</td>
+          <td>{r.trainPct===null?"—":`${r.trainPct}%`}</td>
+          <td>{r.called}/{r.matchTotal}</td>
+          <td>{r.matchPct===null?"—":`${r.matchPct}%`}</td>
+          <td>{r.notCalled}</td>
+          <td>{r.unavailable}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  </section>
+}
+
+function AttendancePage({matchesOnly=false}){
+  const [activities,setActivities]=useState([]);
+  const [players,setPlayers]=useState([]);
+  const [attendance,setAttendance]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [editing,setEditing]=useState(undefined);
+  const [registering,setRegistering]=useState(null);
+  const [filter,setFilter]=useState(matchesOnly?"match":"all");
+
+  async function load(){
+    setLoading(true);setError("");
+    const [a,p,r]=await Promise.all([
+      supabase.from("activities").select("*").eq("team_id",TEAM_ID).order("activity_date",{ascending:false}),
+      supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name"),
+      supabase.from("attendance").select("*,activities!inner(team_id)").eq("activities.team_id",TEAM_ID)
+    ]);
+    setLoading(false);
+    const firstError=a.error||p.error||r.error;
+    if(firstError)return setError(firstError.message);
+    setActivities(a.data||[]);setPlayers(p.data||[]);setAttendance(r.data||[]);
+  }
+  useEffect(()=>{load()},[matchesOnly]);
+
+  async function remove(activity){
+    if(!confirm(`¿Eliminar "${activity.title}"? También se eliminarán sus registros de asistencia.`))return;
+    const {error}=await supabase.from("activities").delete().eq("id",activity.id);
+    if(error)return alert(error.message);
+    load();
+  }
+
+  const visible=activities.filter(a=>{
+    if(matchesOnly)return a.type==="match";
+    return filter==="all"||a.type===filter;
+  });
+
+  function statusLabel(status){
+    return {planned:"Programada",completed:"Realizada",cancelled:"Cancelada",postponed:"Aplazada"}[status]||status;
+  }
+
+  return <>
+    <div className="page-title-row">
+      <div><p className="overline">Equipo</p><h2>{matchesOnly?"Convocatorias":"Asistencia"}</h2>
+        <p className="subtext">{matchesOnly?"Control de convocados, no convocados y jugadores que no pueden asistir.":"Control de entrenamientos y partidos con porcentajes por jugador."}</p></div>
+      <button className="button primary icon-text" onClick={()=>setEditing(null)}><CalendarPlus size={18}/>Nueva actividad</button>
+    </div>
+
+    {!matchesOnly&&<section className="attendance-kpis">
+      <article className="card-panel"><Dumbbell/><div><strong>{activities.filter(a=>a.type==="training"&&a.status==="completed").length}</strong><span>Entrenamientos realizados</span></div></article>
+      <article className="card-panel"><Trophy/><div><strong>{activities.filter(a=>a.type==="match"&&a.status==="completed").length}</strong><span>Partidos realizados</span></div></article>
+      <article className="card-panel"><Percent/><div><strong>{players.filter(p=>p.active).length}</strong><span>Jugadores activos</span></div></article>
+    </section>}
+
+    {!matchesOnly&&<section className="session-filter card-panel">
+      <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas</button>
+      <button className={filter==="training"?"active":""} onClick={()=>setFilter("training")}>Entrenamientos</button>
+      <button className={filter==="match"?"active":""} onClick={()=>setFilter("match")}>Partidos</button>
+      <button className="refresh-session" onClick={load}><RefreshCw size={17}/>Actualizar</button>
+    </section>}
+
+    {error&&<div className="error">{error}</div>}
+    {loading?<div className="empty">Cargando actividades…</div>:visible.length===0?
+      <section className="empty card-panel"><CalendarDays size={38}/><h3>No hay actividades</h3><p>Añade entrenamientos o partidos cuando conozcas las fechas.</p></section>:
+      <section className="activity-list">
+        {visible.map(activity=>{
+          const registered=attendance.filter(r=>r.activity_id===activity.id).length;
+          return <article className="activity-row card-panel" key={activity.id}>
+            <div className={`activity-icon ${activity.type}`}><span>{activity.type==="training"?<Dumbbell/>:<Trophy/>}</span></div>
+            <div className="activity-main">
+              <div className="activity-title"><h3>{activity.title}</h3><span className={`activity-status ${activity.status}`}>{statusLabel(activity.status)}</span></div>
+              <p>{formatDate(activity.activity_date)}{activity.activity_time?` · ${activity.activity_time.slice(0,5)}`:""}{activity.opponent?` · Rival: ${activity.opponent}`:""}</p>
+              <small>{registered} registros completados</small>
+            </div>
+            <div className="activity-actions">
+              <button className="button primary" onClick={()=>setRegistering(activity)}>Registrar</button>
+              <button className="icon-button bordered" onClick={()=>setEditing(activity)}><Pencil size={17}/></button>
+              <button className="delete-button" onClick={()=>remove(activity)}><Trash2 size={17}/></button>
+            </div>
+          </article>
+        })}
+      </section>}
+
+    {!matchesOnly&&players.length>0&&<AttendanceSummary players={players} activities={activities} attendance={attendance}/>}
+
+    {editing!==undefined&&<ActivityModal activity={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
+    {registering&&<AttendanceModal activity={registering} onClose={()=>{setRegistering(null);load()}}/>}
+  </>
+}
+
+
 function Placeholder({title,text}){
   return <section className="placeholder card-panel"><h2>{title}</h2><p>{text}</p></section>
 }
@@ -1006,8 +1343,8 @@ function App(){
         {active==="planificador"&&<SessionsPage onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
         {active==="historial"&&<SessionsPage history onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
         {active==="jugadores"&&<PlayersPage onCount={n=>setCounts(c=>({...c,players:n}))}/>} 
-        {active==="asistencia"&&<Placeholder title="Asistencia" text="Se desarrollará en la fase 5."/>}
-        {active==="convocatorias"&&<Placeholder title="Convocatorias" text="Se desarrollará en la fase 5."/>}
+        {active==="asistencia"&&<AttendancePage/>} 
+        {active==="convocatorias"&&<AttendancePage matchesOnly/>} 
         {active==="estadisticas"&&<Placeholder title="Estadísticas" text="Se desarrollará en la fase 6."/>}
         {active==="configuracion"&&<Placeholder title="Configuración" text="Datos generales del equipo."/>}
       </main>

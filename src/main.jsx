@@ -4,7 +4,7 @@ import {
   BookOpen, CalendarDays, ChevronDown, ClipboardList, History, Home,
   Image as ImageIcon, LayoutDashboard, Menu, Pencil, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Star, Trash2, TrendingUp, UserRound,
-  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus
+  Users, X, Save, ChevronLeft, ChevronRight, CalendarPlus, Printer, Eye, Copy, Check
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
@@ -444,6 +444,322 @@ function SeasonCalendar(){
 }
 
 
+
+const SESSION_PARTS = [
+  {id:"calentamiento",label:"Calentamiento",time:"5-10 min"},
+  {id:"inicial",label:"Parte inicial",time:"15-20 min"},
+  {id:"principal",label:"Parte principal",time:"15-20 min"},
+  {id:"partido",label:"Partido / estrategia",time:"10-15 min"},
+  {id:"vuelta",label:"Vuelta a la calma",time:"5-10 min"},
+];
+
+function ExercisePicker({part,selectedId,onChoose,onClose}){
+  const [items,setItems]=useState([]);
+  const [query,setQuery]=useState("");
+  const [diff,setDiff]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [zoom,setZoom]=useState("");
+
+  useEffect(()=>{
+    supabase.from("exercises").select("*").eq("team_id",TEAM_ID).order("name")
+      .then(({data})=>{setItems(data||[]);setLoading(false)});
+  },[]);
+
+  const filtered=useMemo(()=>items.filter(ex=>{
+    const q=query.trim().toLowerCase();
+    return (!q||ex.name.toLowerCase().includes(q)||(ex.type||"").toLowerCase().includes(q))
+      &&(!diff||ex.difficulty===diff)
+      &&(ex.part===part||true);
+  }).sort((a,b)=>{
+    const ap=a.part===part?0:1,bp=b.part===part?0:1;
+    return ap-bp||a.name.localeCompare(b.name);
+  }),[items,query,diff,part]);
+
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal picker-modal">
+      <header className="modal-head">
+        <div><small>Elegir ejercicio</small><h2>{PART_LABEL[part]||part}</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button>
+      </header>
+      <div className="picker-tools">
+        <label className="search-field"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar por nombre o tipología…"/></label>
+        <select value={diff} onChange={e=>setDiff(e.target.value)}>
+          <option value="">Todas las dificultades</option>
+          <option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option>
+        </select>
+      </div>
+      <div className="picker-scroll">
+        {loading?<div className="empty">Cargando ejercicios…</div>:
+        <div className="picker-grid">
+          {filtered.map(ex=><article className={`picker-card ${selectedId===ex.id?"selected":""}`} key={ex.id}>
+            <button className="picker-image" type="button" onClick={()=>ex.image_url&&setZoom(ex.image_url)}>
+              {ex.image_url?<img src={ex.image_url} alt={ex.name}/>:<span><ImageIcon/>Sin imagen</span>}
+            </button>
+            <div className="picker-content">
+              <h3>{ex.name}</h3>
+              <div className="tags">
+                <span>{PART_LABEL[ex.part]||ex.part}</span>
+                {ex.type&&<span>{ex.type}</span>}
+                <span className={`difficulty ${ex.difficulty}`}>{DIFF_LABEL[ex.difficulty]||ex.difficulty}</span>
+              </div>
+              <p>{ex.description||"Sin descripción."}</p>
+              <button type="button" className="button primary icon-text" onClick={()=>onChoose(ex)}>
+                <Check size={17}/>{selectedId===ex.id?"Seleccionado":"Elegir"}
+              </button>
+            </div>
+          </article>)}
+        </div>}
+      </div>
+      <footer className="picker-footer">
+        <button type="button" className="button secondary" onClick={()=>onChoose(null)}>Vaciar bloque</button>
+        <button type="button" className="button secondary" onClick={onClose}>Cerrar</button>
+      </footer>
+    </div>
+    {zoom&&<div className="zoom nested" onClick={()=>setZoom("")}><button><X/></button><img src={zoom} onClick={e=>e.stopPropagation()}/></div>}
+  </div>
+}
+
+function SessionEditor({session,onClose,onSaved}){
+  const emptyBlocks=Object.fromEntries(SESSION_PARTS.map(p=>[p.id,null]));
+  const [form,setForm]=useState({
+    session_date:session?.session_date||"",
+    kind:session?.kind||"A",
+    title:session?.title||"",
+    goal:session?.goal||"",
+    mesocycle_id:session?.mesocycle_id||"",
+    goalkeeper_notes:session?.goalkeeper_notes||"",
+    notes:session?.notes||"",
+  });
+  const [blocks,setBlocks]=useState(emptyBlocks);
+  const [mesocycles,setMesocycles]=useState([]);
+  const [pickerPart,setPickerPart]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [loading,setLoading]=useState(Boolean(session?.id));
+  const [error,setError]=useState("");
+  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+
+  useEffect(()=>{
+    supabase.from("mesocycles").select("*").eq("team_id",TEAM_ID).order("sort_order")
+      .then(({data})=>setMesocycles(data||[]));
+    if(session?.id){
+      supabase.from("session_blocks").select("part,exercise_id,exercises(*)").eq("session_id",session.id)
+        .then(({data,error})=>{
+          if(error)setError(error.message);
+          const next={...emptyBlocks};
+          (data||[]).forEach(row=>next[row.part]=row.exercises||null);
+          setBlocks(next);setLoading(false);
+        });
+    }
+  },[]);
+
+  async function save(e){
+    e.preventDefault();setError("");
+    if(!form.session_date)return setError("Selecciona una fecha.");
+    setBusy(true);
+    const payload={
+      team_id:TEAM_ID,
+      mesocycle_id:form.mesocycle_id||null,
+      session_date:form.session_date,
+      kind:form.kind,
+      title:form.title.trim()||null,
+      goal:form.goal.trim()||null,
+      goalkeeper_notes:form.goalkeeper_notes.trim()||null,
+      notes:form.notes.trim()||null,
+    };
+    let sessionId=session?.id;
+    if(sessionId){
+      const {error}=await supabase.from("sessions").update(payload).eq("id",sessionId);
+      if(error){setBusy(false);return setError(error.message)}
+    }else{
+      const {data,error}=await supabase.from("sessions").insert(payload).select("id").single();
+      if(error){setBusy(false);return setError(error.message)}
+      sessionId=data.id;
+    }
+
+    const rows=SESSION_PARTS.filter(p=>blocks[p.id]).map((p,index)=>({
+      session_id:sessionId,exercise_id:blocks[p.id].id,part:p.id,sort_order:index
+    }));
+    const {error:deleteError}=await supabase.from("session_blocks").delete().eq("session_id",sessionId);
+    if(deleteError){setBusy(false);return setError(deleteError.message)}
+    if(rows.length){
+      const {error:blockError}=await supabase.from("session_blocks").insert(rows);
+      if(blockError){setBusy(false);return setError(blockError.message)}
+    }
+    setBusy(false);onSaved(sessionId);
+  }
+
+  if(loading)return <div className="modal-backdrop"><div className="modal"><div className="empty">Cargando sesión…</div></div></div>;
+
+  return <div className="modal-backdrop session-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal session-editor-modal">
+      <header className="modal-head">
+        <div><small>{session?"Editar sesión":"Nueva sesión"}</small><h2>Planificador de entrenamiento</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button>
+      </header>
+      <form className="session-editor-form" onSubmit={save}>
+        <section className="session-meta">
+          <label>Fecha<input type="date" value={form.session_date} onChange={e=>set("session_date",e.target.value)}/></label>
+          <label>Sesión<select value={form.kind} onChange={e=>set("kind",e.target.value)}><option value="A">A</option><option value="B">B</option></select></label>
+          <label>Mesociclo<select value={form.mesocycle_id} onChange={e=>set("mesocycle_id",e.target.value)}>
+            <option value="">Sin asignar</option>{mesocycles.map(m=><option value={m.id} key={m.id}>{m.name}</option>)}
+          </select></label>
+          <label className="wide">Título<input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Ej. Conservación y finalización"/></label>
+          <label className="wide">Objetivo de la sesión<textarea rows="3" value={form.goal} onChange={e=>set("goal",e.target.value)} placeholder="Objetivo técnico, táctico o actitudinal…"/></label>
+        </section>
+
+        <section className="blocks-editor">
+          {SESSION_PARTS.map(part=>{
+            const ex=blocks[part.id];
+            return <article className="session-block-card" key={part.id}>
+              <header><div><h3>{part.label}</h3><small>{part.time}</small></div>
+                <button type="button" className="button secondary" onClick={()=>setPickerPart(part.id)}>{ex?"Cambiar":"Elegir ejercicio"}</button>
+              </header>
+              {ex?<div className="selected-exercise">
+                <button type="button" className="selected-image" onClick={()=>ex.image_url&&window.open(ex.image_url,"_blank")}>
+                  {ex.image_url?<img src={ex.image_url} alt={ex.name}/>:<ImageIcon/>}
+                </button>
+                <div><h4>{ex.name}</h4><div className="tags">{ex.type&&<span>{ex.type}</span>}<span className={`difficulty ${ex.difficulty}`}>{DIFF_LABEL[ex.difficulty]}</span></div><p>{ex.description||"Sin descripción."}</p></div>
+              </div>:<div className="empty-block">No se ha elegido ningún ejercicio.</div>}
+            </article>
+          })}
+        </section>
+
+        <section className="session-notes">
+          <label>Trabajo específico de porteros<textarea rows="4" value={form.goalkeeper_notes} onChange={e=>set("goalkeeper_notes",e.target.value)} placeholder="Trabajo separado o adaptaciones para porteros…"/></label>
+          <label>Observaciones<textarea rows="4" value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="Material, incidencias, ajustes o recordatorios…"/></label>
+        </section>
+        {error&&<div className="error">{error}</div>}
+        <footer className="session-editor-footer">
+          <button type="button" className="button secondary" onClick={onClose}>Cancelar</button>
+          <button className="button primary icon-text" disabled={busy}><Save size={17}/>{busy?"Guardando…":"Guardar sesión"}</button>
+        </footer>
+      </form>
+    </div>
+    {pickerPart&&<ExercisePicker part={pickerPart} selectedId={blocks[pickerPart]?.id}
+      onChoose={ex=>{setBlocks(x=>({...x,[pickerPart]:ex}));setPickerPart("")}} onClose={()=>setPickerPart("")}/>}
+  </div>
+}
+
+function printSession(session,blocks){
+  const rows=SESSION_PARTS.map(part=>{
+    const ex=blocks.find(b=>b.part===part.id)?.exercises;
+    return `<section class="block"><header><b>${part.label}</b><span>${part.time}</span></header>
+      <div class="body">${ex?.image_url?`<img src="${ex.image_url}">`:`<div class="noimg">Sin imagen</div>`}
+      <div><h3>${ex?.name||"Sin ejercicio"}</h3><p>${ex?.description||""}</p></div></div></section>`;
+  }).join("");
+  const win=window.open("","_blank");
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${session.title||"Sesión"}</title>
+  <style>@page{size:A4;margin:10mm}body{font-family:Arial;color:#17233b;margin:0}.head{border-bottom:3px solid #1676de;padding-bottom:8px;margin-bottom:10px}.head h1{margin:0}.meta{display:flex;gap:15px;margin-top:5px}.goal,.notes{border:1px solid #bbb;padding:8px;margin:8px 0}.block{border:1px solid #aaa;margin:7px 0;break-inside:avoid}.block header{background:#eef4fa;padding:6px 8px;display:flex;justify-content:space-between}.body{display:grid;grid-template-columns:34% 1fr;gap:10px;padding:8px}.body img{width:100%;height:120px;object-fit:contain}.noimg{height:120px;display:grid;place-items:center;background:#eee}.body h3{margin:0 0 5px}.body p{font-size:12px;margin:0;white-space:pre-wrap}.notes h3{margin:0 0 4px}</style></head>
+  <body><div class="head"><h1>${session.title||`Sesión ${session.kind}`}</h1><div class="meta"><span>${session.session_date}</span><span>Sesión ${session.kind}</span><span>BENJAMÍN C</span></div></div>
+  ${session.goal?`<div class="goal"><b>Objetivo:</b> ${session.goal}</div>`:""}${rows}
+  ${session.goalkeeper_notes?`<div class="notes"><h3>Porteros</h3>${session.goalkeeper_notes}</div>`:""}
+  ${session.notes?`<div class="notes"><h3>Observaciones</h3>${session.notes}</div>`:""}
+  <script>window.onload=()=>window.print()</script></body></html>`);
+  win.document.close();
+}
+
+function SessionPreview({session,onClose}){
+  const [blocks,setBlocks]=useState([]);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    supabase.from("session_blocks").select("*,exercises(*)").eq("session_id",session.id).order("sort_order")
+      .then(({data})=>{setBlocks(data||[]);setLoading(false)});
+  },[]);
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal session-preview-modal">
+      <header className="modal-head"><div><small>{session.session_date} · Sesión {session.kind}</small><h2>{session.title||"Sesión de entrenamiento"}</h2></div>
+        <button className="icon-button" onClick={onClose}><X/></button></header>
+      <div className="session-preview-scroll">
+        {session.goal&&<div className="objective-box"><b>Objetivo</b><p>{session.goal}</p></div>}
+        {loading?<div className="empty">Cargando…</div>:SESSION_PARTS.map(part=>{
+          const ex=blocks.find(b=>b.part===part.id)?.exercises;
+          return <article className="preview-block" key={part.id}><header><b>{part.label}</b><span>{part.time}</span></header>
+            {ex?<div><div className="preview-img">{ex.image_url?<img src={ex.image_url}/>:<ImageIcon/>}</div>
+              <section><h3>{ex.name}</h3><p>{ex.description||""}</p></section></div>:<p className="no-exercise">Sin ejercicio.</p>}
+          </article>
+        })}
+        {session.goalkeeper_notes&&<div className="objective-box"><b>Porteros</b><p>{session.goalkeeper_notes}</p></div>}
+        {session.notes&&<div className="objective-box"><b>Observaciones</b><p>{session.notes}</p></div>}
+      </div>
+      <footer className="picker-footer"><button className="button primary icon-text" onClick={()=>printSession(session,blocks)}><Printer size={17}/>Imprimir A4</button><button className="button secondary" onClick={onClose}>Cerrar</button></footer>
+    </div>
+  </div>
+}
+
+function SessionsPage({history=false,onCount}){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [editing,setEditing]=useState(undefined);
+  const [preview,setPreview]=useState(null);
+  const [filter,setFilter]=useState("all");
+
+  async function load(){
+    setLoading(true);setError("");
+    const {data,error}=await supabase.from("sessions").select("*,mesocycles(name)")
+      .eq("team_id",TEAM_ID).order("session_date",{ascending:history});
+    setLoading(false);
+    if(error)return setError(error.message);
+    setItems(data||[]);onCount?.(data?.length||0);
+  }
+  useEffect(()=>{load()},[history]);
+
+  async function remove(item){
+    if(!confirm(`¿Eliminar la sesión del ${formatDate(item.session_date)}?`))return;
+    const {error}=await supabase.from("sessions").delete().eq("id",item.id);
+    if(error)return alert(error.message);
+    load();
+  }
+
+  async function duplicate(item){
+    const {data:blocks}=await supabase.from("session_blocks").select("*").eq("session_id",item.id);
+    const {data:newSession,error}=await supabase.from("sessions").insert({
+      team_id:TEAM_ID,mesocycle_id:item.mesocycle_id,session_date:item.session_date,kind:item.kind,
+      title:`Copia de ${item.title||`Sesión ${item.kind}`}`,goal:item.goal,
+      goalkeeper_notes:item.goalkeeper_notes,notes:item.notes
+    }).select("id").single();
+    if(error)return alert(error.message);
+    if(blocks?.length)await supabase.from("session_blocks").insert(blocks.map(b=>({
+      session_id:newSession.id,exercise_id:b.exercise_id,part:b.part,sort_order:b.sort_order
+    })));
+    load();
+  }
+
+  const today=toISO(new Date());
+  const filtered=items.filter(s=>filter==="all"||(filter==="upcoming"?s.session_date>=today:s.session_date<today));
+
+  return <>
+    <div className="page-title-row"><div><p className="overline">Sesiones</p><h2>{history?"Historial":"Planificador"}</h2>
+      <p className="subtext">{history?"Consulta sesiones anteriores y vuelve a imprimirlas.":"Crea y modifica sesiones con los cinco bloques de entrenamiento."}</p></div>
+      {!history&&<button className="button primary icon-text" onClick={()=>setEditing(null)}><Plus size={18}/>Nueva sesión</button>}
+    </div>
+    <section className="session-filter card-panel">
+      <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas</button>
+      <button className={filter==="upcoming"?"active":""} onClick={()=>setFilter("upcoming")}>Próximas</button>
+      <button className={filter==="past"?"active":""} onClick={()=>setFilter("past")}>Anteriores</button>
+      <button className="refresh-session" onClick={load}><RefreshCw size={17}/>Actualizar</button>
+    </section>
+    {error&&<div className="error">{error}</div>}
+    {loading?<div className="empty">Cargando sesiones…</div>:filtered.length===0?<section className="empty card-panel"><ClipboardList size={38}/><h3>No hay sesiones</h3><p>{history?"Todavía no hay sesiones anteriores.":"Crea la primera sesión de entrenamiento."}</p></section>:
+    <section className="session-list">
+      {filtered.map(item=><article className="session-row card-panel" key={item.id}>
+        <div className="session-date-box"><strong>{new Date(item.session_date+"T12:00:00").getDate()}</strong><span>{new Intl.DateTimeFormat("es-ES",{month:"short"}).format(new Date(item.session_date+"T12:00:00"))}</span></div>
+        <div className="session-row-main"><div className="session-row-title"><span className="kind-badge">Sesión {item.kind}</span><h3>{item.title||"Entrenamiento"}</h3></div>
+          <p>{item.goal||"Sin objetivo definido."}</p><small>{item.mesocycles?.name||"Sin mesociclo"}</small></div>
+        <div className="session-row-actions">
+          <button className="icon-button bordered" onClick={()=>setPreview(item)} title="Ver"><Eye size={18}/></button>
+          {!history&&<button className="icon-button bordered" onClick={()=>setEditing(item)} title="Editar"><Pencil size={18}/></button>}
+          {!history&&<button className="icon-button bordered" onClick={()=>duplicate(item)} title="Duplicar"><Copy size={18}/></button>}
+          {!history&&<button className="delete-button" onClick={()=>remove(item)} title="Eliminar"><Trash2 size={18}/></button>}
+        </div>
+      </article>)}
+    </section>}
+    {editing!==undefined&&<SessionEditor session={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}
+    {preview&&<SessionPreview session={preview} onClose={()=>setPreview(null)}/>}
+  </>
+}
+
+
 function Placeholder({title,text}){
   return <section className="placeholder card-panel"><h2>{title}</h2><p>{text}</p></section>
 }
@@ -452,7 +768,7 @@ function Dashboard({counts,setActive}){
   const stats=[
     {label:"Ejercicios",value:counts.exercises,color:"blue",icon:BookOpen},
     {label:"Mesociclos",value:counts.mesocycles||0,color:"green",icon:CalendarDays},
-    {label:"Sesiones",value:0,color:"purple",icon:ClipboardList},
+    {label:"Sesiones",value:counts.sessions||0,color:"purple",icon:ClipboardList},
     {label:"Jugadores",value:0,color:"orange",icon:Users},
   ];
   const quick=[
@@ -500,7 +816,7 @@ function Sidebar({active,setActive,open,setOpen}){
 function App(){
   const [active,setActive]=useState("inicio");
   const [open,setOpen]=useState(false);
-  const [counts,setCounts]=useState({exercises:0,mesocycles:0});
+  const [counts,setCounts]=useState({exercises:0,mesocycles:0,sessions:0});
   const labels={
     inicio:"Inicio",mesociclos:"Mesociclos",calendario:"Calendario",planificador:"Planificador",
     historial:"Historial",biblioteca:"Ejercicios",favoritos:"Favoritos",jugadores:"Jugadores",
@@ -519,8 +835,8 @@ function App(){
         {active==="favoritos"&&<Library favoritesOnly onCount={n=>setCounts({exercises:n})}/>}
         {active==="mesociclos"&&<Mesocycles onCount={n=>setCounts(c=>({...c,mesocycles:n}))}/>} 
         {active==="calendario"&&<SeasonCalendar/>} 
-        {active==="planificador"&&<Placeholder title="Planificador de sesiones" text="Se desarrollará en la fase 3."/>}
-        {active==="historial"&&<Placeholder title="Historial de sesiones" text="Se desarrollará en la fase 3."/>}
+        {active==="planificador"&&<SessionsPage onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
+        {active==="historial"&&<SessionsPage history onCount={n=>setCounts(c=>({...c,sessions:n}))}/>} 
         {active==="jugadores"&&<Placeholder title="Jugadores" text="Se desarrollará en la fase 4."/>}
         {active==="asistencia"&&<Placeholder title="Asistencia" text="Se desarrollará en la fase 5."/>}
         {active==="convocatorias"&&<Placeholder title="Convocatorias" text="Se desarrollará en la fase 5."/>}

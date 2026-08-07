@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v6.0.3 — Reparación real del esquema de 'activities'
+
+- Diagnóstico confirmado con el error de Supabase "Could not find the 'home_away' column of 'activities' in the schema cache": la tabla `activities` ya existía con un esquema antiguo/incompleto, y `create table if not exists` (fase5_asistencia.sql) no añade columnas a una tabla ya existente.
+- Nuevo `supabase/fix_schema_activities.sql`: añade con `ADD COLUMN IF NOT EXISTS` las columnas que puedan faltar (`session_id`, `activity_time`, `opponent`, `home_away`, `status`, `created_at`, `updated_at`), reafirma las políticas de acceso y fuerza el refresco de la caché de esquema. Seguro de ejecutar varias veces, no borra datos.
+- El botón "Asistencia" ahora muestra el mensaje de error real de Supabase cuando falla, en vez de un aviso genérico, para poder diagnosticar de un vistazo si algo más está mal.
+
 ## v6.0.2 — Corrección de partidos, asistencia y días de sesión
 
 - Los errores de sincronización con Supabase (partidos automáticos, apertura de asistencia) ya no fallan en silencio: ahora se muestran como aviso en pantalla (Calendario/Convocatorias) o como alerta al pulsar el botón, con el mensaje real de la base de datos.

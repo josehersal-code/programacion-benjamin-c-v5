@@ -10,7 +10,7 @@ import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
 
 const APP_NAME = "Programación Benjamín C";
-const APP_VERSION = "6.0.2";
+const APP_VERSION = "6.0.3";
 const APP_DEVELOPER = "José A. Herrera";
 const SEASON_START = "2026-09-01";
 const SEASON_END = "2027-06-30";
@@ -162,14 +162,14 @@ function SessionEditor({session,onClose,onSaved}){
 }
 
 async function ensureTrainingActivity(session){
-  if(!session?.id||!session.session_date)return null;
+  if(!session?.id||!session.session_date)return {id:null,error:null};
   const {data,error:selErr}=await supabase.from("activities").select("id").eq("team_id",TEAM_ID).eq("session_id",session.id).maybeSingle();
-  if(selErr){console.error("ensureTrainingActivity (buscar):",selErr.message);return null}
+  if(selErr){console.error("ensureTrainingActivity (buscar):",selErr.message);return {id:null,error:selErr.message}}
   const payload={team_id:TEAM_ID,session_id:session.id,activity_date:session.session_date,type:"training",title:session.title||`Sesión ${session.kind||""}`,status:session.status==="completed"?"completed":"planned"};
-  if(data?.id){const {error}=await supabase.from("activities").update(payload).eq("id",data.id);if(error){console.error("ensureTrainingActivity (actualizar):",error.message);return null}return data.id}
+  if(data?.id){const {error}=await supabase.from("activities").update(payload).eq("id",data.id);if(error){console.error("ensureTrainingActivity (actualizar):",error.message);return {id:null,error:error.message}}return {id:data.id,error:null}}
   const {data:created,error:insErr}=await supabase.from("activities").insert(payload).select("id").single();
-  if(insErr){console.error("ensureTrainingActivity (crear):",insErr.message);return null}
-  return created?.id||null;
+  if(insErr){console.error("ensureTrainingActivity (crear):",insErr.message);return {id:null,error:insErr.message}}
+  return {id:created?.id||null,error:null};
 }
 
 function printSession(session,blocks){
@@ -190,7 +190,7 @@ function PlanningPage({history=false}){
   async function reopen(s){await supabase.from("sessions").update({status:"planned"}).eq("id",s.id);await ensureTrainingActivity({...s,status:"planned"});load()}
   async function remove(s){if(!confirm("¿Eliminar esta sesión?"))return;await supabase.from("sessions").delete().eq("id",s.id);load()}
   async function duplicate(s){const {data:bl}=await supabase.from("session_blocks").select("*").eq("session_id",s.id);const {data:n,error}=await supabase.from("sessions").insert({team_id:TEAM_ID,mesocycle_id:s.mesocycle_id,session_date:s.session_date,kind:s.kind,title:`${s.title||"Sesión"} · copia`,goal:s.goal,goalkeeper_notes:s.goalkeeper_notes,notes:s.notes,status:"planned"}).select("*").single();if(error)return alert(error.message);if(bl?.length)await supabase.from("session_blocks").insert(bl.map(b=>({session_id:n.id,exercise_id:b.exercise_id,part:b.part,sort_order:b.sort_order})));await ensureTrainingActivity(n);load()}
-  async function openAttendance(s){await ensureTrainingActivity(s);const {data,error}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).eq("session_id",s.id).maybeSingle();if(error)return alert(`No se pudo abrir la asistencia: ${error.message}`);if(!data)return alert("No se encontró ni se pudo crear el registro de actividad para esta sesión. Comprueba en Supabase que la tabla 'activities' existe y tiene permisos (vuelve a ejecutar supabase/fase5_asistencia.sql) y vuelve a intentarlo.");setAttendanceSession(data)}
+  async function openAttendance(s){const created=await ensureTrainingActivity(s);if(created?.error)return alert(`No se pudo abrir la asistencia: ${created.error}`);const {data,error}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).eq("session_id",s.id).maybeSingle();if(error)return alert(`No se pudo abrir la asistencia: ${error.message}`);if(!data)return alert("No se encontró ni se pudo crear el registro de actividad para esta sesión. Comprueba el esquema de la tabla 'activities' en Supabase (supabase/fix_schema_activities.sql) y vuelve a intentarlo.");setAttendanceSession(data)}
   const shown=sessions.filter(s=>history?s.status==="completed":s.status!=="completed");
   const weeks=useMemo(()=>{const map={};shown.forEach(s=>{const mon=mondayOf(s.session_date),k=iso(mon);if(!map[k])map[k]={monday:mon,sessions:[]};map[k].sessions.push(s)});return Object.values(map).sort((a,b)=>a.monday-b.monday)},[shown]);
   return <>

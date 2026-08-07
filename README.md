@@ -1,6 +1,12 @@
-# Programación Benjamín C · Versión 6.0.2
+# Programación Benjamín C · Versión 6.0.3
 
 Rediseño centrado en uso diario rápido y compacto.
+
+## Cambios en 6.0.3 (sobre 6.0.2)
+
+- Diagnóstico confirmado: la tabla `activities` en tu Supabase real tenía un esquema antiguo/incompleto (le faltaba, entre otras, la columna `home_away`) porque `create table if not exists` no añade columnas a una tabla que ya existe.
+- **Ejecuta `supabase/fix_schema_activities.sql`** en el SQL Editor: añade las columnas que falten sin tocar tus datos, y es seguro repetirlo.
+- El botón "Asistencia" ahora muestra el error real de Supabase si algo falla, en vez de un mensaje genérico.
 
 ## Cambios en 6.0.2 (sobre 6.0.1)
 
@@ -49,4 +55,4 @@ Después sube todos los archivos al repositorio de GitHub y haz commit:
 
 ## Identidad de la aplicación
 
-En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.0.2 · Desarrollado por José A. Herrera.
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.0.3 · Desarrollado por José A. Herrera.

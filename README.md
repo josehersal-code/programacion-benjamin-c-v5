@@ -1,6 +1,27 @@
-# Programación Benjamín C · Versión 6.1.1
+# Programación Benjamín C · Versión 6.2.0
 
 Rediseño centrado en uso diario rápido y compacto.
+
+## Cambios en 6.2.0 (sobre 6.1.1)
+
+**No hace falta ejecutar ninguna query SQL nueva.**
+
+### Copiar y pegar sesiones
+
+1. Pulsa **"Copiar"** en cualquier sesión. Aparece una barra arriba con lo que has copiado.
+2. Pulsa **"Pegar aquí"** en el hueco donde la quieras: aparecen en los huecos libres de Planificación y también en el Calendario.
+3. Puedes pegar varias veces seguidas. Cuando termines, pulsa **"Cancelar"** en la barra.
+
+También puedes usar **"Pegar en fecha…"** para pegar en cualquier fecha (útil si esa semana todavía no tiene ninguna sesión), y **"Copiar semana"** para llevarte las dos sesiones de una semana (A y B) a otra semana de golpe.
+
+Al pegar, la sesión se renombra sola según su nueva semana y se copian sus ejercicios, objetivo y notas. Nunca se pega encima de una sesión que ya existe.
+
+### Uso desde el móvil
+
+- El Calendario se ve como una lista de semanas y días, sin desplazamiento lateral.
+- Las tablas de Asistencia, Convocatorias y Jugadores se ven como tarjetas apiladas.
+- Los modales (editor de sesión, asistencia, biblioteca) se abren a pantalla completa.
+- Botones más grandes y campos que no provocan zoom automático en iPhone.
 
 ## Cambios en 6.1.1 (sobre 6.1.0)
 
@@ -91,4 +112,4 @@ Después sube todos los archivos al repositorio de GitHub y haz commit:
 
 ## Identidad de la aplicación
 
-En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.1.1 · Desarrollado por José A. Herrera.
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.2.0 · Desarrollado por José A. Herrera.

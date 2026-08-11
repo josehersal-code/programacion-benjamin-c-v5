@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## v6.2.0 — Copiar y pegar sesiones + versión móvil
+
+No requiere ninguna query SQL nueva.
+
+### Copiar y pegar
+- Antes, "Copiar" creaba la copia encima de la misma fecha, por eso parecía que no se podía pegar. Ahora **"Copiar" deja la sesión en un portapapeles**: aparece una barra amarilla arriba indicando qué hay copiado, y botones **"Pegar aquí"** en todos los huecos libres, tanto en Planificación como en Calendario.
+- El portapapeles se comparte entre pantallas: puedes copiar en Planificación y pegar en Calendario (o al revés). Se puede pegar tantas veces como quieras hasta pulsar "Cancelar".
+- Botón **"Pegar en fecha…"** en la barra: abre un selector para pegar en cualquier fecha, aunque esa semana todavía no exista en la planificación.
+- Nuevo botón **"Copiar semana"** en cada fila: copia las dos sesiones (A y B) de golpe y las pega en otra semana respetando martes/miércoles.
+- Al pegar, la sesión se renombra sola según su nueva semana (`Semana N · Sesión A/B`), se copian sus ejercicios, objetivo, notas de porteros y observaciones, y se crea siempre como "pendiente".
+- No se puede pegar encima de una sesión que ya existe: ese hueco simplemente no ofrece el botón, y si se fuerza por fecha avisa en vez de duplicar.
+
+### Móvil
+- **Calendario en lista vertical**: en el móvil deja de ser una cuadrícula con scroll lateral y pasa a ser una lista de semanas con sus días, entrenamientos y partidos. Solo aparecen los días con algo (entrenamiento, partido o hueco de entrenamiento libre).
+- Ninguna pantalla se sale ya de ancho en el móvil (verificado en las 10 secciones).
+- Las tablas de **Asistencia/Convocatorias** y **Jugadores** se convierten en tarjetas apiladas, legibles sin scroll horizontal.
+- Los **modales** (editor de sesión, asistencia, vista previa, biblioteca) se abren a pantalla completa.
+- Botones con área táctil mayor en toda la app; corregido que en las tarjetas de sesión los botones "Completar" y eliminar quedaban cortados fuera de la tarjeta.
+- Los campos de formulario usan 16 px en móvil para que iOS no haga zoom automático al escribir.
+- El menú lateral se cierra solo al elegir una sección.
+
+### Otros
+- El Calendario se abre por defecto en el mes actual (o en el del inicio de entrenamientos si la temporada aún no ha empezado), en vez de siempre en septiembre de 2026.
+- Corregido el título del mes, que se veía como "Septiembre De 2026".
+
 ## v6.1.1 — Nombre de sesión automático y número correlativo
 
 - El campo "Título" de cada sesión desaparece del editor: ya no se puede escribir a mano, para evitar que quede desincronizado con la semana real (el caso de "Semana 1 · Sesión A" apareciendo en la fila de la Semana 2).

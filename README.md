@@ -1,6 +1,51 @@
-# Programación Benjamín C · Versión 6.2.0
+# Programación Benjamín C · Versión 6.3.0
 
 Rediseño centrado en uso diario rápido y compacto.
+
+## Antes de publicar la 6.3.0
+
+**Ejecuta `supabase/add_match_venue.sql`** en el SQL Editor de Supabase (seguro, no borra datos): añade a la tabla `activities` las columnas `venue` (campo donde se juega) y `auto_date` (el sábado que generó cada partido, para poder moverlos de día sin duplicados). Sin esta query, al guardar una convocatoria te avisará de que faltan columnas.
+
+## Cambios en 6.3.0 (sobre 6.2.0)
+
+### Datos del partido y convocatoria por WhatsApp
+
+Al abrir la **convocatoria** de un partido ahora puedes rellenar **fecha, rival, hora, si se juega en casa o fuera, y el nombre del campo**. Esos datos aparecen luego en el Calendario, en la lista de Convocatorias y en la pantalla de Inicio.
+
+### Mover un partido de día y añadir partidos sueltos
+
+Si un partido se juega el domingo en vez del sábado, o se adelanta al viernes, **cambia la fecha en su convocatoria y guarda**. El partido se mueve y el sábado que deja libre **no se vuelve a rellenar solo**: la app recuerda de qué sábado venía.
+
+Con el botón **"Nuevo partido"** (en Calendario y en Convocatorias) puedes crear un partido en cualquier día — un amistoso, un torneo, un partido entre semana. Estos son independientes: no ocupan ni sustituyen al partido de liga que la app genera ese sábado.
+
+El botón **"Copiar convocatoria"** genera el mensaje ya montado y lo copia al portapapeles para pegarlo en el grupo de WhatsApp:
+
+```
+⚽ CONVOCATORIA · BENJAMÍN C
+Sábado, 19 de septiembre
+vs C.D. Ejemplo (fuera)
+Hora: 10:30
+Campo: Municipal Norte
+
+Convocados (11):
+1 · Álvaro Ruiz
+4 · Marcos Díaz
+...
+```
+
+El mensaje lista **solo a los convocados**, a propósito: es un grupo de familias de niños y no parece buena idea publicar quién se ha quedado fuera.
+
+El modal muestra además un **contador de convocados** en vivo, útil para no pasarte de los que caben en un fútbol 7.
+
+### Asistencia más rápida
+
+- Arriba del todo hay una tarjeta **"Hoy"** con la sesión o el partido del día y su botón directo. Si hoy no hay nada, muestra la **próxima actividad**.
+- El filtro **"Desde" arranca en la fecha de hoy**, así las actividades pasadas ya no encabezan la lista según avanza la temporada. Con "Ver también las pasadas" recuperas el histórico completo.
+
+### Calendario
+
+- El **día de hoy** se marca con un recuadro azul y el número resaltado (y con la etiqueta "Hoy" en la vista de móvil).
+- Los partidos muestran el rival y la hora en lugar de un genérico "Partido".
 
 ## Cambios en 6.2.0 (sobre 6.1.1)
 
@@ -112,4 +157,4 @@ Después sube todos los archivos al repositorio de GitHub y haz commit:
 
 ## Identidad de la aplicación
 
-En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.2.0 · Desarrollado por José A. Herrera.
+En la esquina inferior izquierda del menú se muestra de forma discreta, a 9 px: Programación Benjamín C · v6.3.0 · Desarrollado por José A. Herrera.

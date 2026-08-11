@@ -122,3 +122,46 @@ aside nav{flex:1 1 auto}
   .players-table td:nth-child(6) button{margin-left:0}
   .player-footstats{justify-content:flex-start;flex-wrap:wrap;gap:12px}
 }
+
+/* ===== Partidos: rival, hora y campo ===== */
+.match-fields{display:grid;grid-template-columns:1fr 110px 130px;gap:10px;padding:13px 14px;background:#fbfcfe;border-bottom:1px solid var(--border)}
+.match-fields label{display:grid;gap:5px;font-size:12px;font-weight:700}
+.match-fields label.wide{grid-column:1/-1}
+.match-fields input,.match-fields select{border:1px solid var(--border);border-radius:7px;padding:9px;background:#fff;font-weight:400}
+.attendance-note{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.att-count{flex:0 0 auto;background:#eaf3ff;color:#116ed1;border-radius:999px;padding:4px 10px;font-size:11px;white-space:nowrap}
+.copy-note{background:#e9f6ec;color:#25703a;border-top:1px solid #c9e5d1;padding:9px 14px;font-size:12px;font-weight:700}
+.copy-btn{margin-right:auto}
+.attendance-list>.attendance-note{margin:-8px -12px 8px}
+.match-form .match-fields{border-bottom:0;background:transparent;padding:15px 16px 4px}
+.match-form .paste-hint{padding:0 16px 4px}
+.match-form .error{margin:8px 16px}
+.match-fields label small{font-weight:400;color:var(--blue);font-size:10px}
+.act-sub{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+
+/* ===== Tarjeta de hoy en Asistencia ===== */
+.today-card{margin-bottom:12px;overflow:hidden}
+.today-card>header{background:#eaf3ff;border-bottom:1px solid #cfe2f8;padding:7px 13px}
+.today-card>header small{color:#116ed1;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.today-items{display:grid}
+.today-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 13px;border-bottom:1px solid #eef1f4}
+.today-item:last-child{border-bottom:0}
+.today-item b{display:block;font-size:15px}
+.today-item small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
+
+/* ===== Día de hoy en el calendario ===== */
+.day.today{background:#fdfaee;box-shadow:inset 0 0 0 2px var(--blue)}
+.day.today>span{background:var(--blue);color:#fff;border-radius:999px;padding:1px 6px;display:inline-block}
+.cal-day-row.today{background:#fdfaee;box-shadow:inset 3px 0 0 var(--blue)}
+.today-tag{background:var(--blue);color:#fff;border-radius:999px;padding:1px 7px;font-size:9px;font-style:normal;font-weight:800;margin-left:7px;vertical-align:middle}
+.activity-table tr.is-today{background:#fdfaee}
+
+@media(max-width:640px){
+  .match-fields{grid-template-columns:1fr 1fr;padding:12px}
+  .match-fields label:first-child{grid-column:1/-1}
+  .today-item{flex-direction:column;align-items:stretch;gap:9px}
+  .today-item .button{width:100%;justify-content:center}
+  .copy-btn{margin-right:0;flex:1 0 100%;justify-content:center}
+  .modal-footer{flex-wrap:wrap}
+  .modal-footer .button{flex:1;justify-content:center}
+}

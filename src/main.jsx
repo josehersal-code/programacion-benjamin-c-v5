@@ -5,13 +5,13 @@ import {
   Menu, Search, Plus, Pencil, Trash2, Copy, Printer, Eye, Star, X, Save,
   Image as ImageIcon, Check, ChevronLeft, ChevronRight, UserPlus, RefreshCw,
   Trophy, Dumbbell, Percent, Award, BarChart3, CircleCheck, CircleX, Ban,
-  ClipboardPaste, Layers, CalendarPlus
+  ClipboardPaste, Layers, CalendarPlus, Share2, MapPin
 } from "lucide-react";
 import { configured, supabase, TEAM_ID } from "./lib/supabase";
 import "./styles.css";
 
 const APP_NAME = "Programación Benjamín C";
-const APP_VERSION = "6.2.0";
+const APP_VERSION = "6.3.0";
 const APP_DEVELOPER = "José A. Herrera";
 const SEASON_START = "2026-09-01";
 const SEASON_END = "2027-06-30";
@@ -58,6 +58,19 @@ function fmtDate(value, short=false){
   return new Intl.DateTimeFormat("es-ES",short?{weekday:"short",day:"numeric",month:"short"}:{day:"2-digit",month:"short",year:"numeric"}).format(new Date(value+"T12:00:00"));
 }
 function iso(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`}
+function fmtLong(value){
+  if(!value)return "";
+  const t=new Intl.DateTimeFormat("es-ES",{weekday:"long",day:"numeric",month:"long"}).format(new Date(value+"T12:00:00"));
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+function fmtTime(value){return value?String(value).slice(0,5):""}
+// Resumen corto de un partido: "vs Rival · 10:30 · En casa".
+// Devuelve "" mientras no se haya puesto rival ni hora, para no repetir
+// "En casa" en los 30 partidos que la app genera automáticamente.
+function matchSummary(a){
+  if(!a?.opponent&&!fmtTime(a?.activity_time))return "";
+  return [a.opponent?`vs ${a.opponent}`:null,fmtTime(a.activity_time)||null,a.home_away==="away"?"Fuera":"En casa"].filter(Boolean).join(" · ");
+}
 function mondayOf(value){
   const d=new Date(value+"T12:00:00"), day=(d.getDay()+6)%7;
   d.setDate(d.getDate()-day);return d;
@@ -348,26 +361,31 @@ async function ensureSaturdayMatches(matchStart=SEASON_START){
   const start=new Date(matchStart+"T12:00:00"), end=new Date(SEASON_END+"T12:00:00");
   const d=new Date(start);while(d.getDay()!==6)d.setDate(d.getDate()+1);
   const saturdays=[];for(;d<=end;d.setDate(d.getDate()+7))saturdays.push(iso(d));
-  const {data:existing,error:selErr}=await supabase.from("activities").select("activity_date,status").eq("team_id",TEAM_ID).eq("type","match").in("activity_date",saturdays.length?saturdays:["1900-01-01"]);
+  // Nos traemos TODOS los partidos del equipo (no solo los que caen en sábado):
+  // si uno se movió al viernes o al domingo, su 'auto_date' sigue apuntando al
+  // sábado de origen y así no se vuelve a generar ese sábado. Los partidos
+  // añadidos a mano tienen auto_date nulo y no ocupan ningún sábado.
+  const {data:existing,error:selErr}=await supabase.from("activities").select("activity_date,auto_date").eq("team_id",TEAM_ID).eq("type","match");
   if(selErr)return selErr.message;
-  const have=new Set((existing||[]).map(x=>x.activity_date));const rows=saturdays.filter(x=>!have.has(x)).map(x=>({team_id:TEAM_ID,activity_date:x,type:"match",title:"Partido",status:"planned",home_away:"home"}));
+  const taken=new Set((existing||[]).map(x=>x.auto_date||x.activity_date));
+  const rows=saturdays.filter(x=>!taken.has(x)).map(x=>({team_id:TEAM_ID,activity_date:x,auto_date:x,type:"match",title:"Partido",status:"planned",home_away:"home"}));
   if(rows.length){const {error:insErr}=await supabase.from("activities").insert(rows);if(insErr)return insErr.message}
   return null;
 }
 
 function CalendarPage(){
   const [month,setMonth]=useState(new Date(2026,8,1)),[sessions,setSessions]=useState([]),[matches,setMatches]=useState([]),[conv,setConv]=useState(null),[editSession,setEditSession]=useState(null),[syncError,setSyncError]=useState(""),[settings,setSettings]=useState({trainingStart:SEASON_START,matchStart:SEASON_START}),[pasteModal,setPasteModal]=useState(false);
-  const {clip,setClip}=useClipboard();const isMobile=useIsMobile();const first=useRef(true);
+  const {clip,setClip}=useClipboard();const isMobile=useIsMobile();const first=useRef(true);const [newMatch,setNewMatch]=useState(false);
   async function load(){const [s,cfg]=await Promise.all([supabase.from("sessions").select("*").eq("team_id",TEAM_ID),loadSeasonSettings()]);setSessions(s.data||[]);setSettings(cfg);if(first.current){first.current=false;const today=iso(new Date()),focus=(today>=cfg.trainingStart&&today<=SEASON_END)?today:cfg.trainingStart;setMonth(new Date(Number(focus.slice(0,4)),Number(focus.slice(5,7))-1,1))}const err=await ensureSaturdayMatches(cfg.matchStart);setSyncError(err?`No se pudieron generar los partidos automáticos: ${err}`:"");const {data:a}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).eq("type","match").order("activity_date");setMatches(a||[])}
   useEffect(()=>{load()},[]);
   const weeks=useMemo(()=>{const first=new Date(month.getFullYear(),month.getMonth(),1),last=new Date(month.getFullYear(),month.getMonth()+1,0),pad=(first.getDay()+6)%7;const days=[];for(let d=1;d<=last.getDate();d++)days.push(new Date(month.getFullYear(),month.getMonth(),d));const cells=[...Array(pad).fill(null),...days];while(cells.length%7)cells.push(null);const rows=[];for(let i=0;i<cells.length;i+=7){const rowMonday=new Date(first);rowMonday.setDate(first.getDate()-pad+i);rows.push({monday:rowMonday,days:cells.slice(i,i+7)})}return rows},[month]);
   const maxWeek=weekNumber(SEASON_END,settings.trainingStart);
   async function noMatch(a){const {error}=await supabase.from("activities").update({status:"cancelled"}).eq("id",a.id);if(error)return alert(`No se pudo actualizar el partido: ${error.message}`);load()}
   async function doPaste(target){const res=await pasteClipboard(clip,target,settings.trainingStart);if(res.error)alert(`No se pudo pegar: ${res.error}`);else if(res.skipped&&!res.pasted)alert("Ya existe una sesión en ese hueco.");await load();return res}
-  function info(d){const date=iso(d),weekday=d.getDay(),ss=sessions.filter(s=>s.session_date===date),mm=matches.filter(a=>a.activity_date===date&&a.status!=="cancelled"),isTraining=(weekday===2||weekday===3)&&date>=settings.trainingStart&&date<=SEASON_END;return {date,weekday,ss,mm,isTraining,kind:weekday===2?"A":"B",free:isTraining&&ss.length===0}}
+  function info(d){const date=iso(d),weekday=d.getDay(),isToday=date===iso(new Date()),ss=sessions.filter(s=>s.session_date===date),mm=matches.filter(a=>a.activity_date===date&&a.status!=="cancelled"),isTraining=(weekday===2||weekday===3)&&date>=settings.trainingStart&&date<=SEASON_END;return {date,weekday,isToday,ss,mm,isTraining,kind:weekday===2?"A":"B",free:isTraining&&ss.length===0}}
   const nav=<div className="calendar-nav"><button aria-label="Mes anterior" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><ChevronLeft/></button><h2>{new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric"}).format(month)}</h2><button aria-label="Mes siguiente" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><ChevronRight/></button></div>;
   return <>
-    <PageHead title="Calendario" kicker="Planificación" subtitle="Entrenamientos y partidos"/>
+    <PageHead title="Calendario" kicker="Planificación" subtitle="Entrenamientos y partidos" action={<button className="button primary" onClick={()=>setNewMatch(true)}><Plus/>Nuevo partido</button>}/>
     {syncError&&<div className="error" style={{marginBottom:12}}>{syncError}</div>}
     <ClipboardBar clip={clip} onClear={()=>setClip(null)} onPasteDate={()=>setPasteModal(true)}/>
     {isMobile
@@ -377,30 +395,178 @@ function CalendarPage(){
           if(!rows.length)return null;
           return <div className="cal-week" key={wi}>
             <header>{wn>=1&&wn<=maxWeek?`Semana ${wn}`:"Fuera de temporada"}</header>
-            {rows.map(x=><div className="cal-day-row" key={x.date}>
-              <b>{fmtDate(x.date,true)}</b>
+            {rows.map(x=><div className={`cal-day-row ${x.isToday?"today":""}`} key={x.date}>
+              <b>{fmtDate(x.date,true)}{x.isToday&&<em className="today-tag">Hoy</em>}</b>
               <div>
                 {x.ss.map(s=><button className={`cal-item training ${s.status==="completed"?"done":""}`} key={s.id} onClick={()=>setEditSession(s)}>Entrenamiento {s.kind}{s.status==="completed"?" · realizado":""}</button>)}
                 {x.free&&<button className="cal-item training empty" onClick={()=>setEditSession({session_date:x.date,kind:x.kind})}><Plus size={13}/>Crear entrenamiento {x.kind}</button>}
                 {x.free&&clip&&clip.type==="session"&&<button className="cal-item paste" onClick={()=>doPaste({date:x.date,kind:x.kind})}><ClipboardPaste size={13}/>Pegar aquí</button>}
-                {x.mm.map(a=><div className="cal-match" key={a.id}><button onClick={()=>setConv(a)}>⚽ Partido · convocatoria</button><button className="x" title="Sin partido" onClick={()=>noMatch(a)}>×</button></div>)}
+                {x.mm.map(a=><div className="cal-match" key={a.id}><button onClick={()=>setConv(a)}>⚽ {matchSummary(a)||"Partido · convocatoria"}</button><button className="x" title="Sin partido" onClick={()=>noMatch(a)}>×</button></div>)}
               </div>
             </div>)}
           </div>})}</section>
-      : <section className="calendar card">{nav}<div className="weekdays"><b/>{["L","M","X","J","V","S","D"].map(x=><b key={x}>{x}</b>)}</div>{weeks.map((w,wi)=>{const wn=weekNumber(iso(w.monday),settings.trainingStart);return <div className="calendar-grid-v6" key={wi}><div className="week-num">{wn>=1&&wn<=maxWeek?`Sem ${wn}`:""}</div>{w.days.map((d,i)=>{if(!d)return <div className="day muted" key={i}/>;const x=info(d);return <div className="day" key={x.date}><span>{d.getDate()}</span>{x.ss.map(s=><button className={`cal-item training ${s.status==="completed"?"done":""}`} key={s.id} onClick={()=>setEditSession(s)}>Entr. {s.kind}</button>)}{x.free&&<button className="cal-item training empty" onClick={()=>setEditSession({session_date:x.date,kind:x.kind})}>+ Entr. {x.kind}</button>}{x.free&&clip&&clip.type==="session"&&<button className="cal-item paste" onClick={()=>doPaste({date:x.date,kind:x.kind})}>Pegar</button>}{x.mm.map(a=><div className="cal-match" key={a.id}><button onClick={()=>setConv(a)}>⚽ Partido</button><button className="x" title="Sin partido" onClick={()=>noMatch(a)}>×</button></div>)}</div>})}</div>})}</section>}
+      : <section className="calendar card">{nav}<div className="weekdays"><b/>{["L","M","X","J","V","S","D"].map(x=><b key={x}>{x}</b>)}</div>{weeks.map((w,wi)=>{const wn=weekNumber(iso(w.monday),settings.trainingStart);return <div className="calendar-grid-v6" key={wi}><div className="week-num">{wn>=1&&wn<=maxWeek?`Sem ${wn}`:""}</div>{w.days.map((d,i)=>{if(!d)return <div className="day muted" key={i}/>;const x=info(d);return <div className={`day ${x.isToday?"today":""}`} key={x.date}><span>{d.getDate()}</span>{x.ss.map(s=><button className={`cal-item training ${s.status==="completed"?"done":""}`} key={s.id} onClick={()=>setEditSession(s)}>Entr. {s.kind}</button>)}{x.free&&<button className="cal-item training empty" onClick={()=>setEditSession({session_date:x.date,kind:x.kind})}>+ Entr. {x.kind}</button>}{x.free&&clip&&clip.type==="session"&&<button className="cal-item paste" onClick={()=>doPaste({date:x.date,kind:x.kind})}>Pegar</button>}{x.mm.map(a=><div className="cal-match" key={a.id}><button onClick={()=>setConv(a)}>⚽ {a.opponent||"Partido"}{fmtTime(a.activity_time)?` · ${fmtTime(a.activity_time)}`:""}</button><button className="x" title="Sin partido" onClick={()=>noMatch(a)}>×</button></div>)}</div>})}</div>})}</section>}
     {conv&&<AttendanceModal activity={conv} mode="match" onClose={()=>{setConv(null);load()}}/>}
     {editSession&&<SessionEditor session={editSession} onClose={()=>setEditSession(null)} onSaved={()=>{setEditSession(null);load()}}/>}
     {pasteModal&&clip&&<PasteDateModal clip={clip} onClose={()=>setPasteModal(false)} onPaste={doPaste}/>}
+    {newMatch&&<MatchModal onClose={()=>setNewMatch(false)} onSaved={()=>{setNewMatch(false);load()}}/>}
   </>
 }
 
 function PlayerModal({player,onClose,onSaved}){const [form,setForm]=useState(player||{number:"",name:"",position:"",start_date:"2026-09-01",end_date:"",active:true,notes:""});const [error,setError]=useState("");const set=(k,v)=>setForm(x=>({...x,[k]:v}));async function save(e){e.preventDefault();if(!form.name.trim())return setError("Escribe el nombre.");const payload={team_id:TEAM_ID,number:form.number===""?null:Number(form.number),name:form.name.trim(),position:form.position||null,start_date:form.start_date||"2026-09-01",end_date:form.end_date||null,active:!!form.active,notes:form.notes||null};const q=player?.id?supabase.from("players").update(payload).eq("id",player.id):supabase.from("players").insert(payload);const {error}=await q;if(error)return setError(error.message);onSaved()}return <ModalShell title="Jugador" kicker={player?"Editar":"Nuevo"} onClose={onClose}><form className="form-grid modal-scroll" onSubmit={save}><label>Dorsal<input type="number" value={form.number??""} onChange={e=>set("number",e.target.value)}/></label><label>Posición<input value={form.position||""} onChange={e=>set("position",e.target.value)}/></label><label className="full">Nombre<input value={form.name} onChange={e=>set("name",e.target.value)}/></label><label>Alta<input type="date" value={form.start_date||""} onChange={e=>set("start_date",e.target.value)}/></label><label>Baja<input type="date" value={form.end_date||""} onChange={e=>set("end_date",e.target.value)}/></label><label className="check full"><input type="checkbox" checked={!!form.active} onChange={e=>set("active",e.target.checked)}/>Activo</label><label className="full">Observaciones<textarea rows="4" value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></label>{error&&<div className="error full">{error}</div>}<footer className="modal-footer full"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary">Guardar</button></footer></form></ModalShell>}
 function PlayersPage(){const [items,setItems]=useState([]),[q,setQ]=useState(""),[editing,setEditing]=useState(undefined);async function load(){const {data}=await supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}).order("name");setItems(data||[])}useEffect(()=>{load()},[]);const filtered=items.filter(p=>!q||p.name.toLowerCase().includes(q.toLowerCase())||String(p.number??"").includes(q));async function toggle(p){await supabase.from("players").update({active:!p.active,end_date:p.active?(p.end_date||iso(new Date())):null}).eq("id",p.id);load()}return <><PageHead title="Jugadores" kicker="Equipo" subtitle={`${items.filter(p=>p.active).length} jugadores activos`} action={<button className="button primary" onClick={()=>setEditing(null)}><UserPlus/>Añadir</button>}/><div className="table-toolbar"><label><Search/><input placeholder="Buscar jugador…" value={q} onChange={e=>setQ(e.target.value)}/></label></div><div className="players-table card"><table><thead><tr><th>Nº</th><th>Jugador</th><th>Posición</th><th>Estado</th><th>Alta</th><th></th></tr></thead><tbody>{filtered.map(p=><tr key={p.id} className={!p.active?"inactive":""}><td className="number">{p.number??"—"}</td><td><b>{p.name}</b></td><td>{p.position||"—"}</td><td><span className={`status ${p.active?"active":"off"}`}>{p.active?"Activo":"Inactivo"}</span></td><td>{fmtDate(p.start_date,true)}</td><td className="table-actions"><button onClick={()=>setEditing(p)}>Editar</button><button onClick={()=>toggle(p)}>{p.active?"Baja":"Reactivar"}</button></td></tr>)}</tbody></table></div><div className="player-footstats"><span>Activos <b>{items.filter(p=>p.active).length}</b></span><span>Inactivos <b>{items.filter(p=>!p.active).length}</b></span><span>Histórico <b>{items.length}</b></span></div>{editing!==undefined&&<PlayerModal player={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);load()}}/>}</>}
 
-function AttendanceModal({activity,onClose,mode}){const [players,setPlayers]=useState([]),[records,setRecords]=useState({}),[saving,setSaving]=useState(false);const isMatch=(mode||activity.type)==="match";useEffect(()=>{Promise.all([supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}),supabase.from("attendance").select("*").eq("activity_id",activity.id)]).then(([p,a])=>{const eligible=(p.data||[]).filter(x=>(!x.start_date||activity.activity_date>=x.start_date)&&(!x.end_date||activity.activity_date<=x.end_date));setPlayers(eligible);const saved=Object.fromEntries((a.data||[]).map(r=>[r.player_id,r.status]));const def=isMatch?"called_up":"present";setRecords(Object.fromEntries(eligible.map(x=>[x.id,saved[x.id]||def])))})},[]);async function save(){setSaving(true);await supabase.from("attendance").delete().eq("activity_id",activity.id);const rows=players.map(p=>({activity_id:activity.id,player_id:p.id,status:records[p.id]}));if(rows.length)await supabase.from("attendance").insert(rows);if(activity.status!=="completed")await supabase.from("activities").update({status:"completed"}).eq("id",activity.id);setSaving(false);onClose()}return <ModalShell title={isMatch?"Convocatoria":"Asistencia"} kicker={`${fmtDate(activity.activity_date)} · ${activity.title}`} onClose={onClose} className="attendance-modal"><div className="attendance-note">Todos aparecen <b>{isMatch?"convocados":"presentes"}</b> por defecto. Cambia solo las excepciones.</div><div className="attendance-list modal-scroll">{players.map(p=><div className="att-row" key={p.id}><span><b>{p.number??"—"}</b>{p.name}</span><div>{isMatch?<><button className={records[p.id]==="called_up"?"sel green":""} onClick={()=>setRecords(x=>({...x,[p.id]:"called_up"}))}>Convocado</button><button className={records[p.id]==="not_called_up"?"sel red":""} onClick={()=>setRecords(x=>({...x,[p.id]:"not_called_up"}))}>No convocado</button><button className={records[p.id]==="unavailable"?"sel amber":""} onClick={()=>setRecords(x=>({...x,[p.id]:"unavailable"}))}>No puede asistir</button></>:<><button className={records[p.id]==="present"?"sel green":""} onClick={()=>setRecords(x=>({...x,[p.id]:"present"}))}>Asiste</button><button className={records[p.id]==="absent"?"sel red":""} onClick={()=>setRecords(x=>({...x,[p.id]:"absent"}))}>No asiste</button></>}</div></div>)}</div><footer className="modal-footer"><button className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" onClick={save} disabled={saving}><Save/>{saving?"Guardando…":"Guardar"}</button></footer></ModalShell>}
+// Texto de la convocatoria listo para pegar en WhatsApp.
+// A propósito solo se listan los convocados: es un grupo de familias de niños
+// y publicar quién se ha quedado fuera no aporta nada bueno.
+function convocatoriaText(activity,match,calledUp){
+  const L=[];
+  L.push("⚽ CONVOCATORIA · BENJAMÍN C");
+  L.push(fmtLong(match.activity_date||activity.activity_date));
+  const rival=match.opponent?`vs ${match.opponent}`:"Partido de temporada";
+  L.push(`${rival}${match.home_away==="away"?" (fuera)":" (en casa)"}`);
+  if(fmtTime(match.activity_time))L.push(`Hora: ${fmtTime(match.activity_time)}`);
+  if(match.venue)L.push(`Campo: ${match.venue}`);
+  L.push("");
+  L.push(`Convocados (${calledUp.length}):`);
+  calledUp.forEach(p=>L.push(`${p.number!=null?`${p.number} · `:""}${p.name}`));
+  return L.join("\n");
+}
+async function copyToClipboard(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch{
+    try{
+      const ta=document.createElement("textarea");
+      ta.value=text;ta.style.position="fixed";ta.style.opacity="0";
+      document.body.appendChild(ta);ta.focus();ta.select();
+      const ok=document.execCommand("copy");ta.remove();return ok;
+    }catch{ return false }
+  }
+}
+// Alta de un partido suelto: amistoso, torneo, aplazado que se recupera…
+// Se crea con auto_date nulo, así que no ocupa ningún sábado de la generación
+// automática ni impide que se cree el partido de liga de esa semana.
+function MatchModal({onClose,onSaved}){
+  const [form,setForm]=useState({activity_date:"",opponent:"",activity_time:"",home_away:"home",venue:""});
+  const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  const set=(k,v)=>setForm(x=>({...x,[k]:v}));
+  async function save(e){
+    e.preventDefault();
+    if(!form.activity_date)return setError("Selecciona la fecha del partido.");
+    setBusy(true);setError("");
+    const {error:err}=await supabase.from("activities").insert({team_id:TEAM_ID,activity_date:form.activity_date,type:"match",title:"Partido",status:"planned",opponent:form.opponent||null,activity_time:form.activity_time||null,home_away:form.home_away,venue:form.venue||null});
+    setBusy(false);
+    if(err)return setError(err.message);
+    onSaved();
+  }
+  return <ModalShell title="Nuevo partido" kicker="Amistoso, torneo o partido fuera de calendario" onClose={onClose}>
+    <form className="match-form" onSubmit={save}>
+      <div className="match-fields">
+        <label className="wide">Fecha<input type="date" value={form.activity_date} onChange={e=>set("activity_date",e.target.value)}/></label>
+        <label>Rival<input value={form.opponent} onChange={e=>set("opponent",e.target.value)} placeholder="Nombre del equipo"/></label>
+        <label>Hora<input type="time" value={form.activity_time} onChange={e=>set("activity_time",e.target.value)}/></label>
+        <label>Dónde se juega<select value={form.home_away} onChange={e=>set("home_away",e.target.value)}><option value="home">En casa</option><option value="away">Fuera</option></select></label>
+        <label className="wide">Campo<input value={form.venue} onChange={e=>set("venue",e.target.value)} placeholder="Nombre del campo o instalación"/></label>
+      </div>
+      <p className="paste-hint">Este partido es independiente de los sábados que crea la app: no ocupa ni sustituye al de liga de esa semana. La convocatoria se hace después, desde el propio partido.</p>
+      {error&&<div className="error">{error}</div>}
+      <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}><Save size={15}/>{busy?"Creando…":"Crear partido"}</button></footer>
+    </form>
+  </ModalShell>
+}
+function AttendanceModal({activity,onClose,mode}){
+  const [players,setPlayers]=useState([]),[records,setRecords]=useState({}),[saving,setSaving]=useState(false),[note,setNote]=useState("");
+  const isMatch=(mode||activity.type)==="match";
+  const [match,setMatch]=useState({activity_date:activity.activity_date,opponent:activity.opponent||"",activity_time:fmtTime(activity.activity_time),home_away:activity.home_away||"home",venue:activity.venue||""});
+  const setM=(k,v)=>setMatch(x=>({...x,[k]:v}));
+  useEffect(()=>{Promise.all([supabase.from("players").select("*").eq("team_id",TEAM_ID).order("number",{ascending:true,nullsFirst:false}),supabase.from("attendance").select("*").eq("activity_id",activity.id)]).then(([p,a])=>{const eligible=(p.data||[]).filter(x=>(!x.start_date||activity.activity_date>=x.start_date)&&(!x.end_date||activity.activity_date<=x.end_date));setPlayers(eligible);const saved=Object.fromEntries((a.data||[]).map(r=>[r.player_id,r.status]));const def=isMatch?"called_up":"present";setRecords(Object.fromEntries(eligible.map(x=>[x.id,saved[x.id]||def])))})},[]);
+  const calledUp=players.filter(p=>records[p.id]==="called_up");
+  const presentes=players.filter(p=>records[p.id]==="present");
+  async function save(){
+    setSaving(true);
+    if(isMatch){
+      if(!match.activity_date){setSaving(false);return alert("El partido necesita una fecha.")}
+      const payload={activity_date:match.activity_date,opponent:match.opponent||null,activity_time:match.activity_time||null,home_away:match.home_away,venue:match.venue||null};
+      // Si movemos un partido generado por la app, dejamos anclado el sábado de
+      // origen para que no se vuelva a crear uno en el hueco que dejamos libre.
+      if(match.activity_date!==activity.activity_date&&!activity.auto_date)payload.auto_date=activity.activity_date;
+      const {error}=await supabase.from("activities").update(payload).eq("id",activity.id);
+      if(error){setSaving(false);return alert(`No se pudieron guardar los datos del partido: ${error.message}`)}
+    }
+    await supabase.from("attendance").delete().eq("activity_id",activity.id);
+    const rows=players.map(p=>({activity_id:activity.id,player_id:p.id,status:records[p.id]}));
+    if(rows.length){const {error}=await supabase.from("attendance").insert(rows);if(error){setSaving(false);return alert(`No se pudo guardar: ${error.message}`)}}
+    if(activity.status!=="completed")await supabase.from("activities").update({status:"completed"}).eq("id",activity.id);
+    setSaving(false);onClose();
+  }
+  async function copiar(){
+    const ok=await copyToClipboard(convocatoriaText(activity,match,calledUp));
+    setNote(ok?"Convocatoria copiada. Ya puedes pegarla en WhatsApp.":"No se pudo copiar. Mantén pulsado para copiar a mano.");
+    setTimeout(()=>setNote(""),4000);
+  }
+  return <ModalShell title={isMatch?"Convocatoria":"Asistencia"} kicker={`${fmtDate(isMatch?match.activity_date:activity.activity_date)} · ${isMatch?(matchSummary(match)||"Partido"):activity.title}`} onClose={onClose} className="attendance-modal">
+    <div className="attendance-list modal-scroll">
+      {isMatch&&<div className="match-fields">
+        <label className="wide">Fecha<input type="date" value={match.activity_date} onChange={e=>setM("activity_date",e.target.value)}/>{match.activity_date!==activity.activity_date&&<small>Se moverá del {fmtDate(activity.activity_date,true)} al {fmtDate(match.activity_date,true)} al guardar.</small>}</label>
+        <label>Rival<input value={match.opponent} onChange={e=>setM("opponent",e.target.value)} placeholder="Nombre del equipo"/></label>
+        <label>Hora<input type="time" value={match.activity_time} onChange={e=>setM("activity_time",e.target.value)}/></label>
+        <label>Dónde se juega<select value={match.home_away} onChange={e=>setM("home_away",e.target.value)}><option value="home">En casa</option><option value="away">Fuera</option></select></label>
+        <label className="wide">Campo<input value={match.venue} onChange={e=>setM("venue",e.target.value)} placeholder="Nombre del campo o instalación"/></label>
+      </div>}
+      <div className="attendance-note">
+        <span>Todos aparecen <b>{isMatch?"convocados":"presentes"}</b> por defecto. Cambia solo las excepciones.</span>
+        <b className="att-count">{isMatch?`${calledUp.length} convocados`:`${presentes.length} de ${players.length} asisten`}</b>
+      </div>
+      {players.map(p=><div className="att-row" key={p.id}><span><b>{p.number??"—"}</b>{p.name}</span><div>{isMatch?<><button className={records[p.id]==="called_up"?"sel green":""} onClick={()=>setRecords(x=>({...x,[p.id]:"called_up"}))}>Convocado</button><button className={records[p.id]==="not_called_up"?"sel red":""} onClick={()=>setRecords(x=>({...x,[p.id]:"not_called_up"}))}>No convocado</button><button className={records[p.id]==="unavailable"?"sel amber":""} onClick={()=>setRecords(x=>({...x,[p.id]:"unavailable"}))}>No puede asistir</button></>:<><button className={records[p.id]==="present"?"sel green":""} onClick={()=>setRecords(x=>({...x,[p.id]:"present"}))}>Asiste</button><button className={records[p.id]==="absent"?"sel red":""} onClick={()=>setRecords(x=>({...x,[p.id]:"absent"}))}>No asiste</button></>}</div></div>)}
+    </div>
+    {note&&<div className="copy-note">{note}</div>}
+    <footer className="modal-footer">
+      {isMatch&&<button type="button" className="button secondary copy-btn" onClick={copiar}><Share2 size={15}/>Copiar convocatoria</button>}
+      <button className="button ghost" onClick={onClose}>Cancelar</button>
+      <button className="button primary" onClick={save} disabled={saving}><Save/>{saving?"Guardando…":"Guardar"}</button>
+    </footer>
+  </ModalShell>
+}
 
 async function syncActivities(trainingStart){const {data:sessions}=await supabase.from("sessions").select("*").eq("team_id",TEAM_ID);for(const s of sessions||[])await ensureTrainingActivity(s,trainingStart);return sessions||[]}
-function AttendancePage({matchesOnly=false}){const [activities,setActivities]=useState([]),[selected,setSelected]=useState(null),[loading,setLoading]=useState(true),[syncError,setSyncError]=useState(""),[fromDate,setFromDate]=useState("");async function load(){setLoading(true);const cfg=await loadSeasonSettings();await syncActivities(cfg.trainingStart);const err=await ensureSaturdayMatches(cfg.matchStart);setSyncError(err?`No se pudieron generar los partidos automáticos: ${err}`:"");const {data,error}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).order("activity_date",{ascending:true});if(error)setSyncError(`No se pudieron cargar las actividades: ${error.message}`);setActivities((data||[]).filter(a=>a.status!=="cancelled"&&(matchesOnly?a.type==="match":true)));setLoading(false)}useEffect(()=>{load()},[matchesOnly]);const shown=activities.filter(a=>!fromDate||a.activity_date>=fromDate);return <><PageHead title={matchesOnly?"Convocatorias":"Asistencia"} kicker="Equipo" subtitle={matchesOnly?"Partidos programados":"Sesiones y partidos creados automáticamente"}/>{syncError&&<div className="error" style={{marginBottom:12}}>{syncError}</div>}<div className="attendance-filter"><label>Desde<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></label>{fromDate&&<button type="button" className="button small secondary" onClick={()=>setFromDate("")}>Quitar filtro</button>}</div>{loading?<Empty text="Cargando…"/>:shown.length===0?<Empty text="No hay actividades para ese filtro."/>:<div className="activity-table card"><table><thead><tr><th>Fecha</th><th>Actividad</th><th>Estado</th><th></th></tr></thead><tbody>{shown.map(a=><tr key={a.id}><td>{fmtDate(a.activity_date,true)}</td><td><b>{a.type==="match"?"⚽":"○"} {a.title}</b></td><td><span className={`status ${a.status==="completed"?"active":"planned"}`}>{a.status==="completed"?"Registrada":"Pendiente"}</span></td><td className="table-actions"><button className="button small primary" onClick={()=>setSelected(a)}>{a.type==="match"?"Convocatoria":"Asistencia"}</button></td></tr>)}</tbody></table></div>}{selected&&<AttendanceModal activity={selected} onClose={()=>{setSelected(null);load()}}/>}</>}
+function ActivityTitle({a}){
+  if(a.type!=="match")return <b>○ {a.title}</b>;
+  const sum=matchSummary(a);
+  return <><b>⚽ {a.opponent?`vs ${a.opponent}`:"Partido"}</b>{sum&&<small className="act-sub">{sum}{a.venue?` · ${a.venue}`:""}</small>}</>;
+}
+function TodayCard({items,onOpen,label}){
+  return <section className="today-card card">
+    <header><small>{label}</small></header>
+    <div className="today-items">{items.map(a=><div className="today-item" key={a.id}>
+      <div><b>{a.type==="match"?"⚽":"○"} {a.type==="match"?(a.opponent?`vs ${a.opponent}`:"Partido"):a.title}</b><small>{fmtLong(a.activity_date)}{a.type==="match"&&matchSummary(a)?` · ${matchSummary(a)}`:""}{a.venue?` · ${a.venue}`:""}</small></div>
+      <button className="button primary" onClick={()=>onOpen(a)}>{a.type==="match"?"Convocatoria":"Pasar asistencia"}</button>
+    </div>)}</div>
+  </section>
+}
+function AttendancePage({matchesOnly=false}){
+  const today=iso(new Date());
+  const [activities,setActivities]=useState([]),[selected,setSelected]=useState(null),[loading,setLoading]=useState(true),[syncError,setSyncError]=useState(""),[fromDate,setFromDate]=useState(today),[newMatch,setNewMatch]=useState(false);
+  async function load(){setLoading(true);const cfg=await loadSeasonSettings();await syncActivities(cfg.trainingStart);const err=await ensureSaturdayMatches(cfg.matchStart);setSyncError(err?`No se pudieron generar los partidos automáticos: ${err}`:"");const {data,error}=await supabase.from("activities").select("*").eq("team_id",TEAM_ID).order("activity_date",{ascending:true});if(error)setSyncError(`No se pudieron cargar las actividades: ${error.message}`);setActivities((data||[]).filter(a=>a.status!=="cancelled"&&(matchesOnly?a.type==="match":true)));setLoading(false)}
+  useEffect(()=>{load()},[matchesOnly]);
+  const shown=activities.filter(a=>!fromDate||a.activity_date>=fromDate);
+  const hoy=activities.filter(a=>a.activity_date===today);
+  const proxima=hoy.length?[]:activities.filter(a=>a.activity_date>today).slice(0,1);
+  const destacado=hoy.length?hoy:proxima;
+  return <>
+    <PageHead title={matchesOnly?"Convocatorias":"Asistencia"} kicker="Equipo" subtitle={matchesOnly?"Partidos programados":"Sesiones y partidos creados automáticamente"} action={matchesOnly&&<button className="button primary" onClick={()=>setNewMatch(true)}><Plus/>Nuevo partido</button>}/>
+    {syncError&&<div className="error" style={{marginBottom:12}}>{syncError}</div>}
+    {!loading&&destacado.length>0&&<TodayCard items={destacado} label={hoy.length?"Hoy":"Próxima actividad"} onOpen={setSelected}/>}
+    <div className="attendance-filter">
+      <label>Desde<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></label>
+      {fromDate===today
+        ? <button type="button" className="button small secondary" onClick={()=>setFromDate("")}>Ver también las pasadas</button>
+        : <button type="button" className="button small secondary" onClick={()=>setFromDate(today)}>Volver a partir de hoy</button>}
+    </div>
+    {loading?<Empty text="Cargando…"/>:shown.length===0?<Empty text="No hay actividades a partir de esa fecha."/>:<div className="activity-table card"><table><thead><tr><th>Fecha</th><th>Actividad</th><th>Estado</th><th></th></tr></thead><tbody>{shown.map(a=><tr key={a.id} className={a.activity_date===today?"is-today":""}><td>{fmtDate(a.activity_date,true)}</td><td><ActivityTitle a={a}/></td><td><span className={`status ${a.status==="completed"?"active":"planned"}`}>{a.status==="completed"?"Registrada":"Pendiente"}</span></td><td className="table-actions"><button className="button small primary" onClick={()=>setSelected(a)}>{a.type==="match"?"Convocatoria":"Asistencia"}</button></td></tr>)}</tbody></table></div>}
+    {selected&&<AttendanceModal activity={selected} onClose={()=>{setSelected(null);load()}}/>}
+    {newMatch&&<MatchModal onClose={()=>setNewMatch(false)} onSaved={()=>{setNewMatch(false);load()}}/>}
+  </>
+}
 
 function AnalyticsPage(){const [players,setPlayers]=useState([]),[activities,setActivities]=useState([]),[attendance,setAttendance]=useState([]),[exercises,setExercises]=useState([]),[blocks,setBlocks]=useState([]);useEffect(()=>{Promise.all([supabase.from("players").select("*").eq("team_id",TEAM_ID),supabase.from("activities").select("*").eq("team_id",TEAM_ID),supabase.from("attendance").select("*,activities!inner(team_id)").eq("activities.team_id",TEAM_ID),supabase.from("exercises").select("*").eq("team_id",TEAM_ID),supabase.from("session_blocks").select("exercise_id,sessions!inner(team_id)").eq("sessions.team_id",TEAM_ID)]).then(([p,a,r,e,b])=>{setPlayers(p.data||[]);setActivities(a.data||[]);setAttendance(r.data||[]);setExercises(e.data||[]);setBlocks(b.data||[])})},[]);const completed=activities.filter(a=>a.status==="completed"),tr=completed.filter(a=>a.type==="training"),mt=completed.filter(a=>a.type==="match");const rec=(pid,aid)=>attendance.find(r=>r.player_id===pid&&r.activity_id===aid)?.status;const stats=players.map(p=>{const ta=tr.filter(a=>rec(p.id,a.id)),ma=mt.filter(a=>rec(p.id,a.id));const present=ta.filter(a=>rec(p.id,a.id)==="present").length,called=ma.filter(a=>rec(p.id,a.id)==="called_up").length;return{p,present,tt:ta.length,tp:ta.length?Math.round(present/ta.length*100):null,called,mt:ma.length,mp:ma.length?Math.round(called/ma.length*100):null,not:ma.filter(a=>rec(p.id,a.id)==="not_called_up").length,un:ma.filter(a=>rec(p.id,a.id)==="unavailable").length}});const usage=Object.values(blocks.reduce((o,b)=>{const e=exercises.find(x=>x.id===b.exercise_id);if(e){o[e.id]=o[e.id]||{e,count:0};o[e.id].count++}return o},{})).sort((a,b)=>b.count-a.count);return <><PageHead title="Análisis" kicker="Resumen" subtitle="Asistencia, convocatorias y uso de ejercicios"/><div className="analytics-top"><Kpi label="Entrenamientos" value={tr.length}/><Kpi label="Partidos" value={mt.length}/><Kpi label="Jugadores" value={players.filter(p=>p.active).length}/><Kpi label="Ejercicios usados" value={blocks.length}/></div><div className="analytics-two"><div className="card analysis-card"><h3>Ranking de ejercicios</h3>{usage.slice(0,10).map((x,i)=><div className="rank" key={x.e.id}><span>{i+1}</span><div><b>{x.e.name}</b><small>{x.e.type||""}</small></div><strong>{x.count}</strong></div>)}</div><div className="card analysis-card"><h3>Jugadores</h3><div className="mini-table"><table><thead><tr><th>Jugador</th><th>Entr.</th><th>Partidos</th></tr></thead><tbody>{stats.map(x=><tr key={x.p.id}><td>{x.p.number??"—"} · {x.p.name}</td><td>{x.tp==null?"—":`${x.tp}%`}</td><td>{x.mp==null?"—":`${x.mp}%`}</td></tr>)}</tbody></table></div></div></div></>}
 function Kpi({label,value}){return <div className="kpi"><strong>{value}</strong><span>{label}</span></div>}

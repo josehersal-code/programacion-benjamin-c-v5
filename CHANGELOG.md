@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## v6.3.0 — Datos del partido, convocatoria por WhatsApp y asistencia del día
+
+**Ejecuta `supabase/add_match_venue.sql`** antes de publicar: añade las columnas `venue` y `auto_date` a `activities` (y reasegura `opponent`, `activity_time` y `home_away`). No borra datos.
+
+### Partidos
+- La tabla `activities` ya tenía `opponent`, `activity_time` y `home_away` desde la v6.0.3, pero **no existía ninguna pantalla para rellenarlas**: Inicio intentaba mostrar "vs [rival]" y nunca podía, y todos los partidos se guardaban como "en casa". Ahora se editan desde la propia convocatoria, junto con el nuevo campo `venue` (nombre del campo).
+- **Los partidos se pueden mover de día**: la fecha es editable desde la convocatoria, así que un partido puede pasar al viernes, al domingo o a entre semana. Nueva columna `auto_date`, que recuerda el sábado que generó cada partido, para que el generador automático **no vuelva a crear un partido en el sábado que has dejado libre**. Antes de este cambio no había ninguna forma de mover un partido.
+- Nuevo botón **"Nuevo partido"** en Calendario y Convocatorias para dar de alta amistosos, torneos o partidos entre semana en cualquier fecha. Se crean con `auto_date` nulo, así que no ocupan ningún sábado ni impiden que se genere el partido de liga de esa semana.
+- Rival, hora, casa/fuera y campo se muestran en el Calendario (la píldora del partido pasa de "Partido" a "C.D. Ejemplo · 10:30"), en la lista de Convocatorias y en la tarjeta de Inicio.
+- Nuevo botón **"Copiar convocatoria"**: genera el texto del partido con la lista de convocados y lo copia al portapapeles para pegarlo en WhatsApp. Solo lista a los convocados, no a quienes se quedan fuera.
+- Contador de convocados en vivo dentro del modal (`N convocados` / `N de M asisten` en entrenamientos).
+- Al guardar, si algo falla en la base de datos ahora se avisa con el mensaje real en vez de fallar en silencio.
+
+### Asistencia y Convocatorias
+- Nueva tarjeta destacada arriba con la actividad de **hoy** y su botón directo de asistencia/convocatoria. Si hoy no hay nada, muestra la **próxima actividad**.
+- El filtro "Desde" **arranca en la fecha de hoy**: corrige que, al ordenar de más antigua a más nueva desde la v6.1.0, las actividades pasadas fueran acumulándose al principio de la lista según avanzaba la temporada. Botón "Ver también las pasadas" para el histórico completo.
+- La fila de hoy queda resaltada en la lista.
+
+### Calendario
+- El día de hoy se marca con recuadro azul y número resaltado en la cuadrícula, y con fondo y etiqueta "Hoy" en la lista de móvil.
+
 ## v6.2.0 — Copiar y pegar sesiones + versión móvil
 
 No requiere ninguna query SQL nueva.
